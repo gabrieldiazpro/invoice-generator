@@ -511,10 +511,12 @@ def init_super_admin():
         return
 
     try:
-        if users_collection.find_one({'email': 'gabriel@peoplespost.fr'}) is None:
+        existing = users_collection.find_one({'email': 'gabriel@peoplespost.fr'})
+        if existing is None:
+            # Utiliser pbkdf2 pour compatibilité
             users_collection.insert_one({
                 'email': 'gabriel@peoplespost.fr',
-                'password': generate_password_hash('admin123'),
+                'password': generate_password_hash('admin123', method='pbkdf2:sha256'),
                 'name': 'Gabriel',
                 'role': 'super_admin',
                 'created_at': datetime.now()

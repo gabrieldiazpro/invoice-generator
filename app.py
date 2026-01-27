@@ -28,9 +28,16 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.exceptions import HTTPException
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from pymongo import MongoClient, ReturnDocument
+
+# Flask-Limiter (optionnel)
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    LIMITER_AVAILABLE = True
+except ImportError:
+    LIMITER_AVAILABLE = False
+    Limiter = None
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from bson.objectid import ObjectId
 from invoice_generator import (
@@ -128,21 +135,36 @@ app.config.update(
 logger = setup_logging(app)
 
 # =============================================================================
-# Rate Limiting
+# Rate Limiting (optionnel)
 # =============================================================================
 
-limiter = Limiter(
-    key_func=get_remote_address,
-    app=app,
-    default_limits=["200 per day", "50 per hour"],
-    storage_uri="memory://",
-    strategy="fixed-window"
-)
+if LIMITER_AVAILABLE:
+    limiter = Limiter(
+        key_func=get_remote_address,
+        app=app,
+        default_limits=["200 per day", "50 per hour"],
+        storage_uri="memory://",
+        strategy="fixed-window"
+    )
+    LOGIN_LIMIT = "5 per minute"
+    EMAIL_LIMIT = "10 per minute"
+    API_LIMIT = "60 per minute"
+    logger.info("Rate limiting activé")
+else:
+    limiter = None
+    LOGIN_LIMIT = None
+    EMAIL_LIMIT = None
+    API_LIMIT = None
+    logger.warning("Flask-Limiter non disponible - rate limiting désactivé")
 
-# Limites spécifiques
-LOGIN_LIMIT = "5 per minute"
-EMAIL_LIMIT = "10 per minute"
-API_LIMIT = "60 per minute"
+
+def optional_limit(limit_string):
+    """Décorateur de rate limiting optionnel"""
+    def decorator(f):
+        if LIMITER_AVAILABLE and limiter and limit_string:
+            return limiter.limit(limit_string)(f)
+        return f
+    return decorator
 
 # =============================================================================
 # MongoDB Configuration
@@ -1179,7 +1201,7 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
 # ============================================================================
 
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit(LOGIN_LIMIT)
+@optional_limit(LOGIN_LIMIT)
 def login():
     """Route de connexion"""
     if current_user.is_authenticated:
@@ -1667,7 +1689,7 @@ def update_email_config():
 
 
 @app.route('/api/email/send/<batch_id>/<invoice_number>', methods=['POST'])
-@limiter.limit(EMAIL_LIMIT)
+@optional_limit(EMAIL_LIMIT)
 @login_required
 def send_single_email(batch_id, invoice_number):
     """Envoie un email pour une facture spécifique"""
@@ -1713,7 +1735,7 @@ def send_single_email(batch_id, invoice_number):
 
 
 @app.route('/api/email/send-all/<batch_id>', methods=['POST'])
-@limiter.limit(EMAIL_LIMIT)
+@optional_limit(EMAIL_LIMIT)
 @login_required
 def send_all_emails(batch_id):
     """Envoie les emails pour toutes les factures du batch"""

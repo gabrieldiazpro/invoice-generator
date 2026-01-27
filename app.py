@@ -172,18 +172,18 @@ except (ConnectionFailure, ServerSelectionTimeoutError) as e:
     logger.critical(f"Impossible de se connecter à MongoDB: {e}")
     mongo_client = None
 
-db = mongo_client['invoice_generator'] if mongo_client else None
-users_collection = db['users'] if db else None
-email_config_collection = db['email_config'] if db else None
-invoice_history_collection = db['invoice_history'] if db else None
-clients_collection = db['clients'] if db else None
+db = mongo_client['invoice_generator'] if mongo_client is not None else None
+users_collection = db['users'] if db is not None else None
+email_config_collection = db['email_config'] if db is not None else None
+invoice_history_collection = db['invoice_history'] if db is not None else None
+clients_collection = db['clients'] if db is not None else None
 
 
 def require_db(f):
     """Décorateur pour vérifier la connexion à la base de données"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not mongo_client or not db:
+        if mongo_client is None or db is None:
             logger.error("Base de données non disponible")
             return jsonify({'error': 'Service temporairement indisponible'}), 503
         return f(*args, **kwargs)
@@ -467,7 +467,7 @@ class User(UserMixin):
 def load_user(user_id):
     """Charge un utilisateur depuis son ID"""
     try:
-        if not users_collection:
+        if users_collection is None:
             return None
         user_data = users_collection.find_one({'_id': ObjectId(user_id)})
         if user_data:
@@ -501,12 +501,12 @@ def super_admin_required(f):
 
 def init_super_admin():
     """Crée le super admin si il n'existe pas"""
-    if not users_collection:
+    if users_collection is None:
         logger.warning("Impossible de créer le super admin: base de données non disponible")
         return
 
     try:
-        if not users_collection.find_one({'email': 'gabriel@peoplespost.fr'}):
+        if users_collection.find_one({'email': 'gabriel@peoplespost.fr'}) is None:
             users_collection.insert_one({
                 'email': 'gabriel@peoplespost.fr',
                 'password': generate_password_hash('admin123'),

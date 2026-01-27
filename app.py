@@ -163,32 +163,66 @@ if not MONGO_URI:
 logger.info(f"Tentative de connexion MongoDB...")
 logger.info(f"URI format: {'SRV' if '+srv' in MONGO_URI else 'standard'}")
 
-def connect_mongodb(uri, attempt=1, max_attempts=3):
-    """Tente de se connecter à MongoDB avec retry"""
+def resolve_srv_to_standard(srv_uri):
+    """Résout une URI SRV MongoDB en format standard"""
     try:
-        logger.info(f"Tentative de connexion {attempt}/{max_attempts}...")
+        import dns.resolver
+        from urllib.parse import urlparse, parse_qs
+
+        # Parse SRV URI
+        parsed = urlparse(srv_uri.replace('mongodb+srv://', 'https://'))
+        username = parsed.username
+        password = parsed.password
+        host = parsed.hostname
+
+        logger.info(f"Résolution SRV pour: {host}")
+
+        # Résoudre les enregistrements SRV
+        srv_records = dns.resolver.resolve(f'_mongodb._tcp.{host}', 'SRV')
+        hosts = []
+        for srv in srv_records:
+            target = str(srv.target).rstrip('.')
+            port = srv.port
+            hosts.append(f"{target}:{port}")
+
+        logger.info(f"Hosts trouvés: {hosts}")
+
+        # Construire l'URI standard
+        hosts_str = ','.join(hosts)
+        standard_uri = f"mongodb://{username}:{password}@{hosts_str}/admin?authSource=admin&ssl=true&replicaSet=atlas-{host.split('.')[0].split('-')[-1]}-shard-0"
+
+        return standard_uri
+    except Exception as e:
+        logger.error(f"Erreur résolution SRV: {type(e).__name__}: {e}")
+        return None
+
+def connect_mongodb(uri, use_srv=True):
+    """Tente de se connecter à MongoDB avec fallback sur format standard"""
+    try:
+        logger.info(f"Connexion MongoDB avec format {'SRV' if use_srv else 'standard'}...")
         client = MongoClient(
             uri,
-            serverSelectionTimeoutMS=10000,
-            connectTimeoutMS=10000,
+            serverSelectionTimeoutMS=15000,
+            connectTimeoutMS=15000,
             socketTimeoutMS=30000,
             retryWrites=True,
-            w='majority'
+            w='majority',
+            tls=True
         )
         # Test connection
         client.admin.command('ping')
         logger.info("Connexion MongoDB établie avec succès!")
         return client
-    except (ConnectionFailure, ServerSelectionTimeoutError) as e:
-        logger.error(f"Erreur connexion MongoDB (tentative {attempt}): {type(e).__name__}: {e}")
-        if attempt < max_attempts:
-            import time
-            time.sleep(2)
-            return connect_mongodb(uri, attempt + 1, max_attempts)
-        return None
     except Exception as e:
-        logger.critical(f"Erreur MongoDB inattendue: {type(e).__name__}: {e}")
-        logger.critical(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Erreur connexion MongoDB: {type(e).__name__}: {e}")
+
+        # Si c'était une URI SRV, essayer avec le format standard
+        if use_srv and '+srv' in uri:
+            logger.info("Tentative avec format standard (résolution manuelle SRV)...")
+            standard_uri = resolve_srv_to_standard(uri)
+            if standard_uri:
+                return connect_mongodb(standard_uri, use_srv=False)
+
         return None
 
 mongo_client = connect_mongodb(MONGO_URI)

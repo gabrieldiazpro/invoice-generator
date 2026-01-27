@@ -17,7 +17,6 @@ import logging
 import traceback
 import re
 import secrets
-from logging.handlers import RotatingFileHandler
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -64,38 +63,19 @@ VERSION = '1.0.0'
 
 def setup_logging(app):
     """Configure le logging structuré pour l'application"""
-    # Format du log
     log_format = logging.Formatter(
-        '[%(asctime)s] %(levelname)s in %(module)s (%(funcName)s:%(lineno)d): %(message)s',
+        '[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-
-    # Niveau de log selon l'environnement
     log_level = logging.DEBUG if DEBUG else logging.INFO
 
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(log_format)
-    console_handler.setLevel(log_level)
+    # Console handler uniquement
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(log_format)
+    handler.setLevel(log_level)
 
-    # File handler (rotating) - seulement en dev local
-    if DEBUG and not os.environ.get('RAILWAY_ENVIRONMENT'):
-        log_dir = os.path.join(os.path.dirname(__file__), 'logs')
-        os.makedirs(log_dir, exist_ok=True)
-        file_handler = RotatingFileHandler(
-            os.path.join(log_dir, 'app.log'),
-            maxBytes=10 * 1024 * 1024,  # 10MB
-            backupCount=5
-        )
-        file_handler.setFormatter(log_format)
-        file_handler.setLevel(logging.DEBUG)
-        app.logger.addHandler(file_handler)
-
-    # Configure app logger
-    app.logger.addHandler(console_handler)
+    app.logger.addHandler(handler)
     app.logger.setLevel(log_level)
-
-    # Disable default Flask logger
     app.logger.propagate = False
 
     return app.logger

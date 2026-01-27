@@ -148,17 +148,15 @@ API_LIMIT = "60 per minute"
 # MongoDB Configuration
 # =============================================================================
 
-# En production, MONGO_URI doit être défini comme variable d'environnement
+# Configuration MongoDB
+# En production, MONGO_URI devrait être défini comme variable d'environnement
 MONGO_URI = os.environ.get('MONGO_URI')
 
 if not MONGO_URI:
-    if DEBUG:
-        # Valeur par défaut uniquement en développement
-        MONGO_URI = 'mongodb+srv://gabrieldiazpro_db_user:gabrieldiazpro_db_password@peoples-post.dabmazu.mongodb.net/?appName=peoples-post'
-        logger.warning("MONGO_URI non défini - utilisation de la valeur par défaut (dev uniquement)")
-    else:
-        logger.critical("MONGO_URI non défini en production!")
-        MONGO_URI = None
+    # Fallback temporaire - À SUPPRIMER en production finale
+    MONGO_URI = 'mongodb+srv://gabrieldiazpro_db_user:gabrieldiazpro_db_password@peoples-post.dabmazu.mongodb.net/?appName=peoples-post'
+    if not DEBUG:
+        logger.warning("MONGO_URI non défini - utilisation du fallback (configurer la variable d'environnement sur Railway)")
 
 try:
     mongo_client = MongoClient(

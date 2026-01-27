@@ -1584,6 +1584,14 @@ function editUser(userId) {
 }
 
 async function saveUser() {
+    console.log('saveUser called');
+
+    const saveBtn = document.getElementById('btn-save-user');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Enregistrement...';
+    }
+
     const userId = document.getElementById('user-id').value;
     const userData = {
         name: document.getElementById('user-name').value,
@@ -1602,6 +1610,8 @@ async function saveUser() {
         userData.send_welcome_email = sendWelcomeCheckbox.checked;
     }
 
+    console.log('User data:', userData);
+
     try {
         let response;
         if (userId) {
@@ -1615,8 +1625,13 @@ async function saveUser() {
             // Create
             if (!password) {
                 showToast('Le mot de passe est requis', 'error');
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Enregistrer';
+                }
                 return;
             }
+            console.log('Creating user...');
             response = await fetch('/api/users', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1624,7 +1639,9 @@ async function saveUser() {
             });
         }
 
+        console.log('Response status:', response.status);
         const data = await response.json();
+        console.log('Response data:', data);
 
         if (data.success || data.user) {
             let message = userId ? 'Utilisateur modifié' : 'Utilisateur créé';
@@ -1646,7 +1663,12 @@ async function saveUser() {
         }
     } catch (error) {
         console.error('Error saving user:', error);
-        showToast('Erreur lors de l\'enregistrement', 'error');
+        showToast('Erreur lors de l\'enregistrement: ' + error.message, 'error');
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Enregistrer';
+        }
     }
 }
 

@@ -811,10 +811,11 @@ L'équipe Peoples Post
                 logo.add_header('Content-Disposition', 'inline', filename='logo.png')
                 msg.attach(logo)
 
-        # Connexion SMTP et envoi
+        # Connexion SMTP et envoi avec timeout
         server = smtplib.SMTP(
             email_config.get('smtp_server', 'smtp.gmail.com'),
-            email_config.get('smtp_port', 587)
+            email_config.get('smtp_port', 587),
+            timeout=30  # 30 secondes max
         )
         server.starttls()
         server.login(
@@ -1146,10 +1147,11 @@ def send_invoice_email(invoice_data, email_config, batch_folder, sender_name=Non
                 )
                 msg.attach(pdf_attachment)
 
-        # Connexion SMTP et envoi
+        # Connexion SMTP et envoi avec timeout
         server = smtplib.SMTP(
             email_config.get('smtp_server', 'smtp.gmail.com'),
-            email_config.get('smtp_port', 587)
+            email_config.get('smtp_port', 587),
+            timeout=30  # 30 secondes max
         )
         server.starttls()
         server.login(
@@ -1250,10 +1252,11 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
                 )
                 msg.attach(pdf_attachment)
 
-        # Connexion SMTP et envoi
+        # Connexion SMTP et envoi avec timeout
         server = smtplib.SMTP(
             email_config.get('smtp_server', 'smtp.gmail.com'),
-            email_config.get('smtp_port', 587)
+            email_config.get('smtp_port', 587),
+            timeout=30  # 30 secondes max
         )
         server.starttls()
         server.login(

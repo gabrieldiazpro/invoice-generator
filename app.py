@@ -155,8 +155,8 @@ def optional_limit(limit_string):
 MONGO_URI = os.environ.get('MONGO_URI', '').strip()
 
 if not MONGO_URI:
-    # Fallback temporaire - À SUPPRIMER en production finale
-    MONGO_URI = 'mongodb+srv://gabrieldiazpro_db_user:gabrieldiazpro_db_password@peoples-post.dabmazu.mongodb.net/?appName=peoples-post'
+    # Fallback - URI standard (non-SRV) pour compatibilité Railway
+    MONGO_URI = 'mongodb://gabrieldiazpro_db_user:gabrieldiazpro_db_password@ac-jcx3ul9-shard-00-00.dabmazu.mongodb.net:27017,ac-jcx3ul9-shard-00-01.dabmazu.mongodb.net:27017,ac-jcx3ul9-shard-00-02.dabmazu.mongodb.net:27017/?authSource=admin&replicaSet=atlas-eawm13-shard-0&tls=true'
     if not DEBUG:
         logger.warning("MONGO_URI non défini - utilisation du fallback")
 

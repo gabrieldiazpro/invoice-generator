@@ -152,13 +152,13 @@ def optional_limit(limit_string):
 
 # Configuration MongoDB
 # En production, MONGO_URI devrait être défini comme variable d'environnement
-MONGO_URI = os.environ.get('MONGO_URI')
+MONGO_URI = os.environ.get('MONGO_URI', '').strip()
 
 if not MONGO_URI:
     # Fallback temporaire - À SUPPRIMER en production finale
     MONGO_URI = 'mongodb+srv://gabrieldiazpro_db_user:gabrieldiazpro_db_password@peoples-post.dabmazu.mongodb.net/?appName=peoples-post'
     if not DEBUG:
-        logger.warning("MONGO_URI non défini - utilisation du fallback (configurer la variable d'environnement sur Railway)")
+        logger.warning("MONGO_URI non défini - utilisation du fallback")
 
 try:
     mongo_client = MongoClient(
@@ -171,7 +171,10 @@ try:
     mongo_client.admin.command('ping')
     logger.info("Connexion MongoDB établie avec succès")
 except (ConnectionFailure, ServerSelectionTimeoutError) as e:
-    logger.critical(f"Impossible de se connecter à MongoDB: {e}")
+    logger.critical(f"Erreur connexion MongoDB: {e}")
+    mongo_client = None
+except Exception as e:
+    logger.critical(f"Erreur MongoDB (vérifiez MONGO_URI): {e}")
     mongo_client = None
 
 db = mongo_client['invoice_generator'] if mongo_client is not None else None

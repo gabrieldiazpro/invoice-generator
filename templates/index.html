@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Générateur de Factures - Peoples Post</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container header-content">
+            <div class="logo">
+                <img src="/static/logo.png" alt="Peoples Post" class="logo-img">
+            </div>
+            <nav class="nav">
+                <a href="#" class="nav-link active" data-tab="generator">Générateur</a>
+                <a href="#" class="nav-link" data-tab="history">Historique</a>
+                <a href="#" class="nav-link" data-tab="clients">Clients</a>
+                <a href="#" class="nav-link" data-tab="settings">Paramètres</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main">
+        <div class="container">
+            <!-- Tab: Générateur -->
+            <section id="tab-generator" class="tab-content active">
+                <div class="page-header">
+                    <h1>Générateur de Factures</h1>
+                    <p>Importez votre fichier CSV pour générer automatiquement les factures PDF</p>
+                </div>
+
+                <!-- Étape 1: Upload -->
+                <div class="card" id="step-upload">
+                    <div class="card-header">
+                        <span class="step-badge">1</span>
+                        <h2>Importer le fichier CSV</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="upload-zone" id="upload-zone">
+                            <div class="upload-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <p class="upload-text">Glissez-déposez votre fichier CSV ici</p>
+                            <p class="upload-hint">ou cliquez pour sélectionner</p>
+                            <input type="file" id="file-input" accept=".csv" hidden>
+                        </div>
+                        <div class="upload-progress hidden" id="upload-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill"></div>
+                            </div>
+                            <p class="progress-text">Analyse en cours...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Étape 2: Aperçu -->
+                <div class="card hidden" id="step-preview">
+                    <div class="card-header">
+                        <span class="step-badge">2</span>
+                        <h2>Aperçu des factures</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="summary-stats" id="summary-stats"></div>
+                        <div class="shippers-list" id="shippers-list"></div>
+                    </div>
+                </div>
+
+                <!-- Étape 3: Configuration -->
+                <div class="card hidden" id="step-config">
+                    <div class="card-header">
+                        <span class="step-badge">3</span>
+                        <h2>Configuration</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="invoice-prefix">Préfixe des factures</label>
+                                <input type="text" id="invoice-prefix" value="PP" placeholder="PP">
+                            </div>
+                            <div class="form-group">
+                                <label for="invoice-start">Numéro de départ</label>
+                                <input type="number" id="invoice-start" value="1" min="1">
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn btn-secondary" id="btn-back">Retour</button>
+                            <button class="btn btn-primary" id="btn-generate">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                                    <polyline points="10 9 9 9 8 9"></polyline>
+                                </svg>
+                                Générer les factures
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Étape 4: Résultats -->
+                <div class="card hidden" id="step-results">
+                    <div class="card-header">
+                        <span class="step-badge success">✓</span>
+                        <h2>Factures générées</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="results-actions">
+                            <button class="btn btn-primary" id="btn-download-all">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                Télécharger tout (ZIP)
+                            </button>
+                            <button class="btn btn-email" id="btn-send-all-emails">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                    <polyline points="22,6 12,13 2,6"></polyline>
+                                </svg>
+                                Envoyer tous les emails
+                            </button>
+                            <button class="btn btn-secondary" id="btn-new-batch">Nouvelle génération</button>
+                        </div>
+
+                        <!-- Résumé envoi emails -->
+                        <div class="email-summary hidden" id="email-summary">
+                            <div class="email-summary-stats">
+                                <span class="email-stat sent"><span id="emails-sent">0</span> envoyés</span>
+                                <span class="email-stat pending"><span id="emails-pending">0</span> en attente</span>
+                                <span class="email-stat failed"><span id="emails-failed">0</span> échoués</span>
+                            </div>
+                        </div>
+
+                        <div class="invoices-list" id="invoices-list"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab: Historique -->
+            <section id="tab-history" class="tab-content">
+                <div class="page-header">
+                    <h1>Historique des Factures</h1>
+                    <p>Consultez, téléchargez et envoyez des relances pour vos factures</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Factures générées</h2>
+                        <div class="header-actions">
+                            <div class="search-box">
+                                <input type="text" id="history-search" placeholder="Rechercher...">
+                            </div>
+                            <select id="history-filter" class="history-filter">
+                                <option value="all">Toutes</option>
+                                <option value="pending">Impayées</option>
+                                <option value="paid">Payées</option>
+                            </select>
+                            <button class="btn btn-secondary btn-sm" id="btn-refresh-history">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <polyline points="1 20 1 14 7 14"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                </svg>
+                                Actualiser
+                            </button>
+                            <div class="btn-group">
+                                <button class="btn btn-reminder-1 btn-sm" id="btn-send-all-reminder-1" title="48h après échéance">R1</button>
+                                <button class="btn btn-reminder-2 btn-sm" id="btn-send-all-reminder-2" title="Avertissement 7j">R2</button>
+                                <button class="btn btn-reminder-3 btn-sm" id="btn-send-all-reminder-3" title="Dernier avis">R3</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="history-stats" id="history-stats"></div>
+                        <div class="history-table-container">
+                            <table class="history-table" id="history-table">
+                                <thead>
+                                    <tr>
+                                        <th><input type="checkbox" id="select-all-history" title="Sélectionner tout"></th>
+                                        <th>N° Facture</th>
+                                        <th>Client</th>
+                                        <th>Montant TTC</th>
+                                        <th>Statut</th>
+                                        <th>R1</th>
+                                        <th>R2</th>
+                                        <th>R3</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-tbody">
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="history-empty hidden" id="history-empty">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                            </svg>
+                            <p>Aucune facture dans l'historique</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab: Clients -->
+            <section id="tab-clients" class="tab-content">
+                <div class="page-header">
+                    <h1>Gestion des Clients</h1>
+                    <p>Configurez les informations de facturation de vos clients</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Liste des clients</h2>
+                        <button class="btn btn-primary btn-sm" id="btn-add-client">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Ajouter
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="clients-grid" id="clients-grid"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab: Paramètres -->
+            <section id="tab-settings" class="tab-content">
+                <div class="page-header">
+                    <h1>Paramètres Email</h1>
+                    <p>Configurez les paramètres d'envoi des factures par email</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Configuration SMTP</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="email-config-form">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="smtp-server">Serveur SMTP</label>
+                                    <input type="text" id="smtp-server" placeholder="smtp.gmail.com">
+                                </div>
+                                <div class="form-group">
+                                    <label for="smtp-port">Port</label>
+                                    <input type="number" id="smtp-port" placeholder="587">
+                                </div>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="smtp-username">Identifiant SMTP</label>
+                                    <input type="text" id="smtp-username" placeholder="votre@email.com">
+                                </div>
+                                <div class="form-group">
+                                    <label for="smtp-password">Mot de passe SMTP</label>
+                                    <input type="password" id="smtp-password" placeholder="••••••••">
+                                    <small class="form-hint" id="password-hint"></small>
+                                </div>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="sender-name">Nom de l'expéditeur</label>
+                                    <input type="text" id="sender-name" placeholder="Peoples Post">
+                                </div>
+                                <div class="form-group">
+                                    <label for="sender-email">Email de l'expéditeur</label>
+                                    <input type="email" id="sender-email" placeholder="facturation@peoplespost.fr">
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h2>Template de l'email</h2>
+                        <button class="btn btn-secondary btn-sm" onclick="previewEmail('invoice')">
+                            Visualiser
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="email-subject">Objet de l'email</label>
+                            <input type="text" id="email-subject" placeholder="Votre facture Peoples Post - {invoice_number}">
+                            <small class="form-hint">Variables: {invoice_number}, {client_name}, {company_name}</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="email-template">Corps de l'email</label>
+                            <textarea id="email-template" rows="12" placeholder="Bonjour,
+
+Veuillez trouver ci-joint votre facture..."></textarea>
+                            <small class="form-hint">Variables: {client_name}, {company_name}, {invoice_number}, {total_ttc}, {total_ht}, {period}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h2>Relance 1 - 48h après échéance</h2>
+                        <button class="btn btn-reminder-1 btn-sm" onclick="previewEmail('reminder_1')">
+                            Visualiser
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="reminder-1-subject">Objet</label>
+                            <input type="text" id="reminder-1-subject" placeholder="RELANCE - Facture {invoice_number} en attente de paiement">
+                        </div>
+                        <div class="form-group">
+                            <label for="reminder-1-template">Corps de l'email</label>
+                            <textarea id="reminder-1-template" rows="8" placeholder="Première relance..."></textarea>
+                            <small class="form-hint">Variables: {client_name}, {company_name}, {invoice_number}, {total_ttc}, {total_ht}, {period}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h2>Relance 2 - Avertissement (suspension dans 7 jours)</h2>
+                        <button class="btn btn-reminder-2 btn-sm" onclick="previewEmail('reminder_2')">
+                            Visualiser
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="reminder-2-subject">Objet</label>
+                            <input type="text" id="reminder-2-subject" placeholder="URGENT - Facture {invoice_number} impayée">
+                        </div>
+                        <div class="form-group">
+                            <label for="reminder-2-template">Corps de l'email</label>
+                            <textarea id="reminder-2-template" rows="8" placeholder="Avertissement de suspension..."></textarea>
+                            <small class="form-hint">Variables: {client_name}, {company_name}, {invoice_number}, {total_ttc}, {total_ht}, {period}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h2>Relance 3 - Dernier avis (veille de suspension)</h2>
+                        <button class="btn btn-reminder-3 btn-sm" onclick="previewEmail('reminder_3')">
+                            Visualiser
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="reminder-3-subject">Objet</label>
+                            <input type="text" id="reminder-3-subject" placeholder="DERNIER AVIS - Suspension imminente">
+                        </div>
+                        <div class="form-group">
+                            <label for="reminder-3-template">Corps de l'email</label>
+                            <textarea id="reminder-3-template" rows="8" placeholder="Dernier avis avant suspension..."></textarea>
+                            <small class="form-hint">Variables: {client_name}, {company_name}, {invoice_number}, {total_ttc}, {total_ht}, {period}</small>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn btn-primary" id="btn-save-email-config">
+                                Enregistrer la configuration
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Modal Client -->
+    <div class="modal hidden" id="client-modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Modifier le client</h3>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="client-form">
+                    <input type="hidden" id="client-key">
+                    <div class="form-group">
+                        <label for="client-nom">Nom complet</label>
+                        <input type="text" id="client-nom" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="client-adresse">Adresse</label>
+                        <input type="text" id="client-adresse" required>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="client-cp">Code postal</label>
+                            <input type="text" id="client-cp" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="client-ville">Ville</label>
+                            <input type="text" id="client-ville" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="client-pays">Pays</label>
+                        <input type="text" id="client-pays" value="France">
+                    </div>
+                    <div class="form-group">
+                        <label for="client-email">Email</label>
+                        <input type="email" id="client-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="client-siret">SIRET</label>
+                        <input type="text" id="client-siret" pattern="[0-9]{14}" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel">Annuler</button>
+                <button class="btn btn-primary" id="btn-save-client">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Résultat envoi emails -->
+    <div class="modal hidden" id="email-results-modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>Résultat de l'envoi des emails</h3>
+                <button class="modal-close" id="email-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="email-results-summary" id="email-results-summary"></div>
+                <div class="email-results-list" id="email-results-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="btn-close-email-results">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Résultat envoi relances -->
+    <div class="modal hidden" id="reminder-results-modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>Résultat de l'envoi des relances</h3>
+                <button class="modal-close" id="reminder-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="email-results-summary" id="reminder-results-summary"></div>
+                <div class="email-results-list" id="reminder-results-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="btn-close-reminder-results">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal prévisualisation email -->
+    <div class="modal hidden" id="email-preview-modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content modal-xl">
+            <div class="modal-header">
+                <h3 id="email-preview-title">Prévisualisation de l'email</h3>
+                <button class="modal-close" id="email-preview-close">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 0; background: #f5f5f5;">
+                <iframe id="email-preview-iframe" style="width: 100%; height: 600px; border: none;"></iframe>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-close-email-preview">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

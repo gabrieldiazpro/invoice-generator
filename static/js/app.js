@@ -1,0 +1,1237 @@
+/**
+ * Peoples Post - Invoice Generator Frontend
+ */
+
+// State
+let currentFileId = null;
+let currentBatchId = null;
+let shippersData = [];
+let invoicesData = [];
+
+// DOM Elements
+const uploadZone = document.getElementById('upload-zone');
+const fileInput = document.getElementById('file-input');
+const uploadProgress = document.getElementById('upload-progress');
+
+const stepUpload = document.getElementById('step-upload');
+const stepPreview = document.getElementById('step-preview');
+const stepConfig = document.getElementById('step-config');
+const stepResults = document.getElementById('step-results');
+
+const summaryStats = document.getElementById('summary-stats');
+const shippersList = document.getElementById('shippers-list');
+const invoicesList = document.getElementById('invoices-list');
+const clientsGrid = document.getElementById('clients-grid');
+
+const clientModal = document.getElementById('client-modal');
+const clientForm = document.getElementById('client-form');
+
+const emailResultsModal = document.getElementById('email-results-modal');
+
+// ==========================================================================
+// Navigation
+// ==========================================================================
+
+document.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const tabId = link.dataset.tab;
+
+        // Update nav
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+
+        // Update content
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.getElementById(`tab-${tabId}`).classList.add('active');
+
+        // Load data for tab
+        if (tabId === 'clients') {
+            loadClients();
+        } else if (tabId === 'settings') {
+            loadEmailConfig();
+        } else if (tabId === 'history') {
+            loadHistory();
+        }
+    });
+});
+
+// ==========================================================================
+// File Upload
+// ==========================================================================
+
+uploadZone.addEventListener('click', () => fileInput.click());
+
+uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.classList.add('dragover');
+});
+
+uploadZone.addEventListener('dragleave', () => {
+    uploadZone.classList.remove('dragover');
+});
+
+uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleFileUpload(files[0]);
+    }
+});
+
+fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+        handleFileUpload(e.target.files[0]);
+    }
+});
+
+async function handleFileUpload(file) {
+    if (!file.name.endsWith('.csv')) {
+        showToast('Veuillez sélectionner un fichier CSV', 'error');
+        return;
+    }
+
+    // Show progress
+    uploadZone.classList.add('hidden');
+    uploadProgress.classList.remove('hidden');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Erreur lors de l\'upload');
+        }
+
+        currentFileId = data.file_id;
+        shippersData = data.shippers;
+
+        showPreview(data);
+        showToast(`${data.total_shippers} clients trouvés`, 'success');
+
+    } catch (error) {
+        showToast(error.message, 'error');
+        resetUpload();
+    }
+}
+
+function resetUpload() {
+    uploadZone.classList.remove('hidden');
+    uploadProgress.classList.add('hidden');
+    fileInput.value = '';
+}
+
+// ==========================================================================
+// Preview
+// ==========================================================================
+
+function showPreview(data) {
+    // Update stats
+    const totalHT = data.shippers.reduce((sum, s) => sum + s.total_ht, 0);
+    const totalLines = data.shippers.reduce((sum, s) => sum + s.lines_count, 0);
+    const withEmail = data.shippers.filter(s => s.client_email).length;
+
+    summaryStats.innerHTML = `
+        <div class="stat-card">
+            <div class="stat-value">${data.total_shippers}</div>
+            <div class="stat-label">Clients</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${totalLines}</div>
+            <div class="stat-label">Lignes</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${formatCurrency(totalHT)}</div>
+            <div class="stat-label">Total HT estimé</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${withEmail}/${data.total_shippers}</div>
+            <div class="stat-label">Avec email</div>
+        </div>
+    `;
+
+    // Update shippers list
+    shippersList.innerHTML = data.shippers.map(shipper => `
+        <div class="shipper-item">
+            <input type="checkbox" class="shipper-checkbox" data-shipper="${shipper.name}" checked>
+            <div class="shipper-info">
+                <div class="shipper-name">${shipper.name}</div>
+                <div class="shipper-details">${shipper.lines_count} lignes${shipper.client_email ? ' • ' + shipper.client_email : ''}</div>
+            </div>
+            <div class="shipper-status ${shipper.client_configured ? 'configured' : 'missing'}">
+                ${shipper.client_configured ? '✓ Configuré' : '⚠ À configurer'}
+            </div>
+            <div class="shipper-total">${formatCurrency(shipper.total_ht)} HT</div>
+        </div>
+    `).join('');
+
+    // Show steps
+    stepUpload.classList.add('hidden');
+    stepPreview.classList.remove('hidden');
+    stepConfig.classList.remove('hidden');
+}
+
+// ==========================================================================
+// Generation
+// ==========================================================================
+
+document.getElementById('btn-back').addEventListener('click', () => {
+    stepPreview.classList.add('hidden');
+    stepConfig.classList.add('hidden');
+    resetUpload();
+});
+
+document.getElementById('btn-generate').addEventListener('click', async () => {
+    const prefix = document.getElementById('invoice-prefix').value || 'PP';
+    const startNumber = parseInt(document.getElementById('invoice-start').value) || 1;
+
+    // Get selected shippers
+    const selectedShippers = [];
+    document.querySelectorAll('.shipper-checkbox:checked').forEach(cb => {
+        selectedShippers.push(cb.dataset.shipper);
+    });
+
+    if (selectedShippers.length === 0) {
+        showToast('Veuillez sélectionner au moins un client', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('btn-generate');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Génération en cours...';
+
+    try {
+        const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                file_id: currentFileId,
+                prefix: prefix,
+                start_number: startNumber,
+                shippers: selectedShippers
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Erreur lors de la génération');
+        }
+
+        currentBatchId = data.batch_id;
+        invoicesData = data.invoices;
+        showResults(data);
+        showToast(`${data.total_generated} factures générées`, 'success');
+
+    } catch (error) {
+        showToast(error.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            Générer les factures
+        `;
+    }
+});
+
+function showResults(data) {
+    renderInvoicesList(data.invoices);
+    updateEmailSummary(data.invoices);
+
+    document.getElementById('btn-download-all').onclick = () => {
+        window.location.href = `/api/download-all/${data.batch_id}`;
+    };
+
+    stepPreview.classList.add('hidden');
+    stepConfig.classList.add('hidden');
+    stepResults.classList.remove('hidden');
+}
+
+function renderInvoicesList(invoices) {
+    invoicesList.innerHTML = invoices.map(inv => {
+        let emailStatus = '';
+        let emailButton = '';
+
+        if (inv.email_sent) {
+            emailStatus = '<span class="invoice-email-status sent">✓ Email envoyé</span>';
+            emailButton = '<button class="btn btn-send-email btn-sm" disabled>Envoyé</button>';
+        } else if (!inv.client_email) {
+            emailStatus = '<span class="invoice-email-status no-email">⚠ Pas d\'email</span>';
+            emailButton = '<button class="btn btn-send-email btn-sm" disabled>Pas d\'email</button>';
+        } else {
+            emailStatus = '<span class="invoice-email-status pending">En attente</span>';
+            emailButton = `<button class="btn btn-send-email btn-sm" onclick="sendSingleEmail('${inv.invoice_number}')">Envoyer</button>`;
+        }
+
+        return `
+            <div class="invoice-item" data-invoice="${inv.invoice_number}">
+                <div class="invoice-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>
+                </div>
+                <div class="invoice-info">
+                    <div class="invoice-name">${inv.shipper}</div>
+                    <div class="invoice-number">${inv.invoice_number}${inv.client_email ? ' • ' + inv.client_email : ''}</div>
+                </div>
+                ${emailStatus}
+                <div class="invoice-total">${inv.total_ttc_formatted}</div>
+                <a href="/api/download/${currentBatchId}/${inv.filename}" class="btn btn-secondary btn-sm">PDF</a>
+                ${emailButton}
+            </div>
+        `;
+    }).join('');
+}
+
+function updateEmailSummary(invoices) {
+    const sent = invoices.filter(i => i.email_sent).length;
+    const pending = invoices.filter(i => !i.email_sent && i.client_email).length;
+    const noEmail = invoices.filter(i => !i.client_email).length;
+
+    document.getElementById('emails-sent').textContent = sent;
+    document.getElementById('emails-pending').textContent = pending;
+    document.getElementById('emails-failed').textContent = noEmail;
+
+    document.getElementById('email-summary').classList.remove('hidden');
+}
+
+document.getElementById('btn-new-batch').addEventListener('click', () => {
+    stepResults.classList.add('hidden');
+    stepUpload.classList.remove('hidden');
+    document.getElementById('email-summary').classList.add('hidden');
+    resetUpload();
+    currentFileId = null;
+    currentBatchId = null;
+    invoicesData = [];
+});
+
+// ==========================================================================
+// Email Sending
+// ==========================================================================
+
+window.sendSingleEmail = async function(invoiceNumber) {
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+
+    try {
+        const response = await fetch(`/api/email/send/${currentBatchId}/${invoiceNumber}`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('Email envoyé avec succès', 'success');
+            // Update invoice in list
+            const inv = invoicesData.find(i => i.invoice_number === invoiceNumber);
+            if (inv) {
+                inv.email_sent = true;
+            }
+            renderInvoicesList(invoicesData);
+            updateEmailSummary(invoicesData);
+        } else {
+            showToast(data.error || 'Erreur lors de l\'envoi', 'error');
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    } catch (error) {
+        showToast('Erreur lors de l\'envoi', 'error');
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+};
+
+document.getElementById('btn-send-all-emails').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-send-all-emails');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Envoi en cours...';
+
+    try {
+        const response = await fetch(`/api/email/send-all/${currentBatchId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ only_pending: true })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showEmailResults(data.results);
+            // Refresh invoices data
+            await refreshInvoicesStatus();
+        } else {
+            showToast(data.error || 'Erreur lors de l\'envoi', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de l\'envoi', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                <polyline points="22,6 12,13 2,6"></polyline>
+            </svg>
+            Envoyer tous les emails
+        `;
+    }
+});
+
+function showEmailResults(results) {
+    document.getElementById('email-results-summary').innerHTML = `
+        <div class="stat">
+            <div class="stat-value success">${results.sent}</div>
+            <div class="stat-label">Envoyés</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value warning">${results.skipped}</div>
+            <div class="stat-label">Ignorés</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value error">${results.failed}</div>
+            <div class="stat-label">Échoués</div>
+        </div>
+    `;
+
+    document.getElementById('email-results-list').innerHTML = results.details.map(d => {
+        let iconClass = 'success';
+        let icon = '✓';
+        if (d.status === 'failed') {
+            iconClass = 'error';
+            icon = '✗';
+        } else if (d.status === 'skipped') {
+            iconClass = 'skipped';
+            icon = '–';
+        }
+
+        return `
+            <div class="email-result-item">
+                <div class="email-result-icon ${iconClass}">${icon}</div>
+                <div class="email-result-info">
+                    <div class="email-result-invoice">${d.invoice_number}</div>
+                    <div class="email-result-message">${d.message}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    emailResultsModal.classList.remove('hidden');
+}
+
+async function refreshInvoicesStatus() {
+    try {
+        const response = await fetch(`/api/email/status/${currentBatchId}`);
+        const data = await response.json();
+        if (data.success) {
+            invoicesData = data.invoices;
+            renderInvoicesList(invoicesData);
+            updateEmailSummary(invoicesData);
+        }
+    } catch (error) {
+        console.error('Error refreshing status:', error);
+    }
+}
+
+// Close email results modal
+document.getElementById('email-modal-close').addEventListener('click', () => {
+    emailResultsModal.classList.add('hidden');
+});
+document.getElementById('btn-close-email-results').addEventListener('click', () => {
+    emailResultsModal.classList.add('hidden');
+});
+
+// ==========================================================================
+// Email Configuration
+// ==========================================================================
+
+async function loadEmailConfig() {
+    try {
+        const response = await fetch('/api/email/config');
+        const config = await response.json();
+
+        document.getElementById('smtp-server').value = config.smtp_server || '';
+        document.getElementById('smtp-port').value = config.smtp_port || '';
+        document.getElementById('smtp-username').value = config.smtp_username || '';
+        document.getElementById('sender-name').value = config.sender_name || '';
+        document.getElementById('sender-email').value = config.sender_email || '';
+        document.getElementById('email-subject').value = config.email_subject || '';
+        document.getElementById('email-template').value = config.email_template || '';
+
+        // Reminder templates (3 types)
+        document.getElementById('reminder-1-subject').value = config.reminder_1_subject || '';
+        document.getElementById('reminder-1-template').value = config.reminder_1_template || '';
+        document.getElementById('reminder-2-subject').value = config.reminder_2_subject || '';
+        document.getElementById('reminder-2-template').value = config.reminder_2_template || '';
+        document.getElementById('reminder-3-subject').value = config.reminder_3_subject || '';
+        document.getElementById('reminder-3-template').value = config.reminder_3_template || '';
+
+        // Password hint
+        if (config.smtp_password_set) {
+            document.getElementById('password-hint').textContent = '✓ Mot de passe configuré (laisser vide pour conserver)';
+        } else {
+            document.getElementById('password-hint').textContent = '⚠ Mot de passe non configuré';
+        }
+    } catch (error) {
+        showToast('Erreur lors du chargement de la configuration', 'error');
+    }
+}
+
+document.getElementById('btn-save-email-config').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-email-config');
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement...';
+
+    const config = {
+        smtp_server: document.getElementById('smtp-server').value,
+        smtp_port: parseInt(document.getElementById('smtp-port').value) || 587,
+        smtp_username: document.getElementById('smtp-username').value,
+        smtp_password: document.getElementById('smtp-password').value,
+        sender_name: document.getElementById('sender-name').value,
+        sender_email: document.getElementById('sender-email').value,
+        email_subject: document.getElementById('email-subject').value,
+        email_template: document.getElementById('email-template').value,
+        reminder_1_subject: document.getElementById('reminder-1-subject').value,
+        reminder_1_template: document.getElementById('reminder-1-template').value,
+        reminder_2_subject: document.getElementById('reminder-2-subject').value,
+        reminder_2_template: document.getElementById('reminder-2-template').value,
+        reminder_3_subject: document.getElementById('reminder-3-subject').value,
+        reminder_3_template: document.getElementById('reminder-3-template').value
+    };
+
+    try {
+        const response = await fetch('/api/email/config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('Configuration enregistrée', 'success');
+            document.getElementById('smtp-password').value = '';
+            loadEmailConfig();
+        } else {
+            showToast('Erreur lors de l\'enregistrement', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de l\'enregistrement', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Enregistrer la configuration';
+    }
+});
+
+// ==========================================================================
+// Clients Management
+// ==========================================================================
+
+async function loadClients() {
+    try {
+        const response = await fetch('/api/clients');
+        const clients = await response.json();
+
+        renderClients(clients);
+    } catch (error) {
+        showToast('Erreur lors du chargement des clients', 'error');
+    }
+}
+
+function renderClients(clients) {
+    if (Object.keys(clients).length === 0) {
+        clientsGrid.innerHTML = `
+            <div class="empty-state">
+                <p>Aucun client configuré</p>
+                <p>Les clients seront ajoutés automatiquement lors de l'import d'un CSV</p>
+            </div>
+        `;
+        return;
+    }
+
+    clientsGrid.innerHTML = Object.entries(clients).map(([key, client]) => {
+        const isComplete = client.siret && client.siret !== '00000000000000';
+        const hasEmail = client.email && client.email.includes('@');
+        const safeKey = encodeURIComponent(key);
+
+        return `
+            <div class="client-card" data-client-key="${safeKey}">
+                <div class="client-card-header">
+                    <div>
+                        <div class="client-name">${escapeHtml(client.nom)}</div>
+                        <div class="client-key">${escapeHtml(key)}</div>
+                    </div>
+                    <div class="client-actions">
+                        <button class="client-action edit" data-action="edit" data-key="${safeKey}" title="Modifier">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                        </button>
+                        <button class="client-action delete" data-action="delete" data-key="${safeKey}" title="Supprimer">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="client-details">
+                    <p>${escapeHtml(client.adresse)}</p>
+                    <p>${escapeHtml(client.code_postal)} ${escapeHtml(client.ville)}, ${escapeHtml(client.pays)}</p>
+                    <p>${client.email ? escapeHtml(client.email) : 'Pas d\'email'}</p>
+                    <p>SIRET: ${escapeHtml(client.siret)}</p>
+                </div>
+                <div class="client-status ${isComplete && hasEmail ? 'complete' : 'incomplete'}">
+                    ${isComplete && hasEmail ? '✓ Complet' : '⚠ Informations manquantes'}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Attach event listeners for edit/delete buttons
+    clientsGrid.querySelectorAll('[data-action="edit"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const key = decodeURIComponent(btn.dataset.key);
+            editClient(key);
+        });
+    });
+
+    clientsGrid.querySelectorAll('[data-action="delete"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const key = decodeURIComponent(btn.dataset.key);
+            deleteClient(key);
+        });
+    });
+}
+
+// Edit client
+window.editClient = async function(key) {
+    try {
+        const response = await fetch('/api/clients');
+        const clients = await response.json();
+        const client = clients[key];
+
+        if (!client) return;
+
+        document.getElementById('client-key').value = key;
+        document.getElementById('client-nom').value = client.nom || '';
+        document.getElementById('client-adresse').value = client.adresse || '';
+        document.getElementById('client-cp').value = client.code_postal || '';
+        document.getElementById('client-ville').value = client.ville || '';
+        document.getElementById('client-pays').value = client.pays || 'France';
+        document.getElementById('client-email').value = client.email || '';
+        document.getElementById('client-siret').value = client.siret || '';
+
+        document.getElementById('modal-title').textContent = `Modifier: ${key}`;
+        clientModal.classList.remove('hidden');
+    } catch (error) {
+        showToast('Erreur lors du chargement du client', 'error');
+    }
+};
+
+// Delete client
+window.deleteClient = async function(key) {
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer "${key}" ?`)) {
+        return;
+    }
+
+    try {
+        await fetch(`/api/clients/${encodeURIComponent(key)}`, {
+            method: 'DELETE'
+        });
+
+        showToast('Client supprimé', 'success');
+        loadClients();
+    } catch (error) {
+        showToast('Erreur lors de la suppression', 'error');
+    }
+};
+
+// Add new client
+document.getElementById('btn-add-client').addEventListener('click', () => {
+    document.getElementById('client-key').value = '';
+    clientForm.reset();
+    document.getElementById('client-pays').value = 'France';
+    document.getElementById('modal-title').textContent = 'Nouveau client';
+    clientModal.classList.remove('hidden');
+});
+
+// Modal close
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('btn-cancel').addEventListener('click', closeModal);
+document.querySelector('.modal-backdrop').addEventListener('click', closeModal);
+
+function closeModal() {
+    clientModal.classList.add('hidden');
+}
+
+// Save client
+document.getElementById('btn-save-client').addEventListener('click', async () => {
+    const key = document.getElementById('client-key').value;
+    const clientName = document.getElementById('client-nom').value;
+
+    // Use existing key or create new one from name
+    const clientKey = key || clientName.replace(/\s+/g, '_');
+
+    const clientData = {
+        nom: document.getElementById('client-nom').value,
+        adresse: document.getElementById('client-adresse').value,
+        code_postal: document.getElementById('client-cp').value,
+        ville: document.getElementById('client-ville').value,
+        pays: document.getElementById('client-pays').value,
+        email: document.getElementById('client-email').value,
+        siret: document.getElementById('client-siret').value
+    };
+
+    try {
+        const response = await fetch(`/api/clients/${encodeURIComponent(clientKey)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(clientData)
+        });
+
+        if (!response.ok) {
+            throw new Error('Erreur lors de la sauvegarde');
+        }
+
+        showToast('Client enregistré', 'success');
+        closeModal();
+        loadClients();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
+});
+
+// ==========================================================================
+// History Management
+// ==========================================================================
+
+let historyData = [];
+let historyFilter = 'all';
+
+async function loadHistory(search = '') {
+    try {
+        const url = search ? `/api/history?search=${encodeURIComponent(search)}` : '/api/history';
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.success) {
+            historyData = data.history;
+            applyHistoryFilter();
+        }
+    } catch (error) {
+        showToast('Erreur lors du chargement de l\'historique', 'error');
+    }
+}
+
+function applyHistoryFilter() {
+    let filtered = historyData;
+
+    if (historyFilter === 'pending') {
+        filtered = historyData.filter(inv => inv.payment_status !== 'paid');
+    } else if (historyFilter === 'paid') {
+        filtered = historyData.filter(inv => inv.payment_status === 'paid');
+    }
+
+    renderHistory(filtered);
+    updateHistoryStats(historyData);
+}
+
+function renderHistory(history) {
+    const tbody = document.getElementById('history-tbody');
+    const emptyState = document.getElementById('history-empty');
+    const tableContainer = document.querySelector('.history-table-container');
+
+    if (!history || history.length === 0) {
+        tableContainer.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+        return;
+    }
+
+    tableContainer.classList.remove('hidden');
+    emptyState.classList.add('hidden');
+
+    tbody.innerHTML = history.map(inv => {
+        const safeId = encodeURIComponent(inv.id);
+        const isPaid = inv.payment_status === 'paid';
+        const hasEmail = !!inv.client_email;
+
+        // Payment status badge
+        const paymentBadge = isPaid
+            ? `<span class="payment-badge paid" data-action="toggle-payment" data-id="${safeId}" title="Cliquer pour marquer comme impayée">Payée</span>`
+            : `<span class="payment-badge pending" data-action="toggle-payment" data-id="${safeId}" title="Cliquer pour marquer comme payée">Impayée</span>`;
+
+        // Reminder buttons for R1, R2, R3
+        const r1Sent = inv.reminder_1_sent;
+        const r2Sent = inv.reminder_2_sent;
+        const r3Sent = inv.reminder_3_sent;
+
+        const r1Btn = r1Sent
+            ? '<button class="reminder-cell-btn sent" disabled title="Envoyée">R1</button>'
+            : (isPaid || !hasEmail)
+                ? '<button class="reminder-cell-btn r1" disabled title="Non disponible">R1</button>'
+                : `<button class="reminder-cell-btn r1" data-action="send-reminder" data-id="${safeId}" data-type="1" title="Envoyer relance 1">R1</button>`;
+
+        const r2Btn = r2Sent
+            ? '<button class="reminder-cell-btn sent" disabled title="Envoyée">R2</button>'
+            : (isPaid || !hasEmail)
+                ? '<button class="reminder-cell-btn r2" disabled title="Non disponible">R2</button>'
+                : `<button class="reminder-cell-btn r2" data-action="send-reminder" data-id="${safeId}" data-type="2" title="Envoyer relance 2">R2</button>`;
+
+        const r3Btn = r3Sent
+            ? '<button class="reminder-cell-btn sent" disabled title="Envoyée">R3</button>'
+            : (isPaid || !hasEmail)
+                ? '<button class="reminder-cell-btn r3" disabled title="Non disponible">R3</button>'
+                : `<button class="reminder-cell-btn r3" data-action="send-reminder" data-id="${safeId}" data-type="3" title="Envoyer relance 3">R3</button>`;
+
+        return `
+            <tr data-history-id="${safeId}">
+                <td><input type="checkbox" class="history-checkbox" data-id="${safeId}" ${isPaid ? 'disabled' : ''}></td>
+                <td class="invoice-number-cell">${escapeHtml(inv.invoice_number)}</td>
+                <td class="client-cell" title="${escapeHtml(inv.client_name)}">${escapeHtml(inv.client_name)}</td>
+                <td class="amount-cell">${inv.total_ttc_formatted || formatCurrency(inv.total_ttc)}</td>
+                <td>${paymentBadge}</td>
+                <td>${r1Btn}</td>
+                <td>${r2Btn}</td>
+                <td>${r3Btn}</td>
+                <td class="actions-cell">
+                    <button class="history-action-btn download" data-action="download" data-id="${safeId}" title="Télécharger">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </button>
+                    <button class="history-action-btn delete" data-action="delete-history" data-id="${safeId}" title="Supprimer">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    // Attach event listeners
+    tbody.querySelectorAll('[data-action="download"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = decodeURIComponent(btn.dataset.id);
+            downloadFromHistory(id);
+        });
+    });
+
+    tbody.querySelectorAll('[data-action="delete-history"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = decodeURIComponent(btn.dataset.id);
+            deleteFromHistory(id);
+        });
+    });
+
+    tbody.querySelectorAll('[data-action="toggle-payment"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = decodeURIComponent(btn.dataset.id);
+            togglePaymentStatus(id);
+        });
+    });
+
+    tbody.querySelectorAll('[data-action="send-reminder"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = decodeURIComponent(btn.dataset.id);
+            const type = parseInt(btn.dataset.type);
+            sendSingleReminder(id, type);
+        });
+    });
+}
+
+function updateHistoryStats(history) {
+    const statsContainer = document.getElementById('history-stats');
+    if (!history || history.length === 0) {
+        statsContainer.innerHTML = '';
+        return;
+    }
+
+    const totalInvoices = history.length;
+    const totalTTC = history.reduce((sum, inv) => sum + (inv.total_ttc || 0), 0);
+    const paidCount = history.filter(inv => inv.payment_status === 'paid').length;
+    const unpaidCount = totalInvoices - paidCount;
+    const unpaidTotal = history.filter(inv => inv.payment_status !== 'paid').reduce((sum, inv) => sum + (inv.total_ttc || 0), 0);
+
+    const r1Count = history.filter(inv => inv.reminder_1_sent).length;
+    const r2Count = history.filter(inv => inv.reminder_2_sent).length;
+    const r3Count = history.filter(inv => inv.reminder_3_sent).length;
+
+    statsContainer.innerHTML = `
+        <div class="stat-card">
+            <div class="stat-value">${totalInvoices}</div>
+            <div class="stat-label">Factures</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--color-warning)">${unpaidCount}</div>
+            <div class="stat-label">Impayées (${formatCurrency(unpaidTotal)})</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--color-success)">${paidCount}</div>
+            <div class="stat-label">Payées</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${r1Count} / ${r2Count} / ${r3Count}</div>
+            <div class="stat-label">Relances R1/R2/R3</div>
+        </div>
+    `;
+}
+
+function downloadFromHistory(id) {
+    window.location.href = `/api/history/download/${encodeURIComponent(id)}`;
+}
+
+async function togglePaymentStatus(id) {
+    const inv = historyData.find(h => h.id === id);
+    if (!inv) return;
+
+    const newStatus = inv.payment_status === 'paid' ? 'pending' : 'paid';
+    const statusText = newStatus === 'paid' ? 'payée' : 'impayée';
+
+    try {
+        const response = await fetch(`/api/history/${encodeURIComponent(id)}/payment`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus })
+        });
+
+        if (response.ok) {
+            showToast(`Facture marquée comme ${statusText}`, 'success');
+            loadHistory();
+        } else {
+            showToast('Erreur lors de la mise à jour', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de la mise à jour', 'error');
+    }
+}
+
+async function sendSingleReminder(id, reminderType) {
+    const inv = historyData.find(h => h.id === id);
+    if (!inv) return;
+
+    const reminderNames = {
+        1: '1ère relance (48h)',
+        2: '2ème relance (avertissement)',
+        3: '3ème relance (dernier avis)'
+    };
+
+    if (!confirm(`Envoyer ${reminderNames[reminderType]} pour la facture ${inv.invoice_number} à ${inv.client_email} ?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/history/${encodeURIComponent(id)}/reminder/${reminderType}`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`${reminderNames[reminderType]} envoyée avec succès`, 'success');
+            loadHistory();
+        } else {
+            showToast(data.error || 'Erreur lors de l\'envoi', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de l\'envoi de la relance', 'error');
+    }
+}
+
+async function sendAllReminders(reminderType) {
+    const reminderNames = {
+        1: '1ère relance',
+        2: '2ème relance',
+        3: '3ème relance'
+    };
+
+    // Get selected invoices or all unpaid invoices
+    const selectedCheckboxes = document.querySelectorAll('.history-checkbox:checked');
+    let invoiceIds = [];
+
+    if (selectedCheckboxes.length > 0) {
+        invoiceIds = Array.from(selectedCheckboxes).map(cb => decodeURIComponent(cb.dataset.id));
+    }
+
+    const reminderKey = `reminder_${reminderType}_sent`;
+    const eligibleCount = invoiceIds.length > 0
+        ? historyData.filter(inv => invoiceIds.includes(inv.id) && inv.payment_status !== 'paid' && inv.client_email && !inv[reminderKey]).length
+        : historyData.filter(inv => inv.payment_status !== 'paid' && inv.client_email && !inv[reminderKey]).length;
+
+    if (eligibleCount === 0) {
+        showToast(`Aucune facture éligible pour la ${reminderNames[reminderType]}`, 'error');
+        return;
+    }
+
+    const message = `Envoyer ${reminderNames[reminderType]} pour ${eligibleCount} facture(s) ?`;
+
+    if (!confirm(message)) {
+        return;
+    }
+
+    const btn = document.getElementById(`btn-send-all-reminder-${reminderType}`);
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '...';
+
+    try {
+        const response = await fetch(`/api/history/reminders/send-all/${reminderType}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ invoice_ids: invoiceIds })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showReminderResults(data.results);
+            loadHistory();
+        } else {
+            showToast(data.error || 'Erreur lors de l\'envoi', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de l\'envoi des relances', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+function showReminderResults(results) {
+    document.getElementById('reminder-results-summary').innerHTML = `
+        <div class="stat">
+            <div class="stat-value success">${results.sent}</div>
+            <div class="stat-label">Envoyées</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value warning">${results.skipped}</div>
+            <div class="stat-label">Ignorées</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value error">${results.failed}</div>
+            <div class="stat-label">Échouées</div>
+        </div>
+    `;
+
+    document.getElementById('reminder-results-list').innerHTML = results.details.map(d => {
+        let iconClass = 'success';
+        let icon = '✓';
+        if (d.status === 'failed') {
+            iconClass = 'error';
+            icon = '✗';
+        } else if (d.status === 'skipped') {
+            iconClass = 'skipped';
+            icon = '–';
+        }
+
+        return `
+            <div class="email-result-item">
+                <div class="email-result-icon ${iconClass}">${icon}</div>
+                <div class="email-result-info">
+                    <div class="email-result-invoice">${d.invoice_number}</div>
+                    <div class="email-result-message">${d.message}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    document.getElementById('reminder-results-modal').classList.remove('hidden');
+}
+
+async function deleteFromHistory(id) {
+    const inv = historyData.find(h => h.id === id);
+    const name = inv ? inv.invoice_number : id;
+
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer "${name}" de l'historique ?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/history/${encodeURIComponent(id)}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            showToast('Facture supprimée de l\'historique', 'success');
+            loadHistory();
+        } else {
+            showToast('Erreur lors de la suppression', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de la suppression', 'error');
+    }
+}
+
+// History search
+const historySearchInput = document.getElementById('history-search');
+let searchTimeout = null;
+
+if (historySearchInput) {
+    historySearchInput.addEventListener('input', (e) => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            loadHistory(e.target.value);
+        }, 300);
+    });
+}
+
+// Refresh history button
+const btnRefreshHistory = document.getElementById('btn-refresh-history');
+if (btnRefreshHistory) {
+    btnRefreshHistory.addEventListener('click', () => {
+        const search = historySearchInput ? historySearchInput.value : '';
+        loadHistory(search);
+        showToast('Historique actualisé', 'success');
+    });
+}
+
+// History filter
+const historyFilterSelect = document.getElementById('history-filter');
+if (historyFilterSelect) {
+    historyFilterSelect.addEventListener('change', (e) => {
+        historyFilter = e.target.value;
+        applyHistoryFilter();
+    });
+}
+
+// Send all reminders buttons (R1, R2, R3)
+const btnSendAllR1 = document.getElementById('btn-send-all-reminder-1');
+const btnSendAllR2 = document.getElementById('btn-send-all-reminder-2');
+const btnSendAllR3 = document.getElementById('btn-send-all-reminder-3');
+
+if (btnSendAllR1) btnSendAllR1.addEventListener('click', () => sendAllReminders(1));
+if (btnSendAllR2) btnSendAllR2.addEventListener('click', () => sendAllReminders(2));
+if (btnSendAllR3) btnSendAllR3.addEventListener('click', () => sendAllReminders(3));
+
+// Select all history checkbox
+const selectAllHistory = document.getElementById('select-all-history');
+if (selectAllHistory) {
+    selectAllHistory.addEventListener('change', (e) => {
+        const checkboxes = document.querySelectorAll('.history-checkbox:not(:disabled)');
+        checkboxes.forEach(cb => cb.checked = e.target.checked);
+    });
+}
+
+// Reminder results modal close
+const reminderResultsModal = document.getElementById('reminder-results-modal');
+if (reminderResultsModal) {
+    document.getElementById('reminder-modal-close').addEventListener('click', () => {
+        reminderResultsModal.classList.add('hidden');
+    });
+    document.getElementById('btn-close-reminder-results').addEventListener('click', () => {
+        reminderResultsModal.classList.add('hidden');
+    });
+}
+
+// ==========================================================================
+// Email Preview
+// ==========================================================================
+
+const emailPreviewModal = document.getElementById('email-preview-modal');
+if (emailPreviewModal) {
+    document.getElementById('email-preview-close').addEventListener('click', () => {
+        emailPreviewModal.classList.add('hidden');
+    });
+    document.getElementById('btn-close-email-preview').addEventListener('click', () => {
+        emailPreviewModal.classList.add('hidden');
+    });
+    // Close on backdrop click
+    emailPreviewModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+        emailPreviewModal.classList.add('hidden');
+    });
+}
+
+/**
+ * Affiche une prévisualisation de l'email
+ * @param {string} emailType - 'invoice', 'reminder_1', 'reminder_2', 'reminder_3'
+ */
+async function previewEmail(emailType) {
+    const modal = document.getElementById('email-preview-modal');
+    const iframe = document.getElementById('email-preview-iframe');
+    const title = document.getElementById('email-preview-title');
+
+    const titles = {
+        'invoice': 'Prévisualisation - Email de facture',
+        'reminder_1': 'Prévisualisation - Relance 1 (48h)',
+        'reminder_2': 'Prévisualisation - Relance 2 (Avertissement)',
+        'reminder_3': 'Prévisualisation - Relance 3 (Dernier avis)'
+    };
+
+    title.textContent = titles[emailType] || 'Prévisualisation';
+
+    try {
+        // Charger le HTML dans l'iframe
+        iframe.src = `/api/email/preview/${emailType}`;
+        modal.classList.remove('hidden');
+    } catch (error) {
+        console.error('Error loading preview:', error);
+        showToast('Erreur lors du chargement de la prévisualisation', 'error');
+    }
+}
+
+// ==========================================================================
+// Utilities
+// ==========================================================================
+
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('fr-FR', {
+        style: 'currency',
+        currency: 'EUR'
+    }).format(amount);
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.remove();
+    }, 4000);
+}
+
+// ==========================================================================
+// Init
+// ==========================================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Check URL hash for initial tab
+    if (window.location.hash === '#clients') {
+        document.querySelector('[data-tab="clients"]').click();
+    } else if (window.location.hash === '#settings') {
+        document.querySelector('[data-tab="settings"]').click();
+    } else if (window.location.hash === '#history') {
+        document.querySelector('[data-tab="history"]').click();
+    }
+});

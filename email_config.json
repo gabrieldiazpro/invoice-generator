@@ -1,0 +1,16 @@
+{
+  "smtp_server": "smtp.gmail.com",
+  "smtp_port": 587,
+  "smtp_username": "gabriel@frankme.com",
+  "smtp_password": "qvbcklqzmucwyjun",
+  "sender_email": "victor.estines@peoplespost.fr",
+  "sender_name": "Peoples Post",
+  "email_subject": "Votre facture Peoples Post - {invoice_number}",
+  "email_template": "Bonjour,\n\nVeuillez trouver ci-joint votre facture {invoice_number} d'un montant total de {total_ttc} TTC.\n\nDétails de la facture :\n- Entreprise : {company_name}\n- Période : {period}\n- Montant HT : {total_ht}\n- Montant TTC : {total_ttc}\n\nCette facture est payable sous 30 jours à compter de sa date d'émission.\n\nNous vous remercions pour votre confiance.\n\nCordialement,\nL'équipe Peoples Post\n\n--\nPeoples Post SAS\n22 rue Emeriau, 75015 Paris\nvictor.estines@peoplespost.fr\nSIRET 98004432500010",
+  "reminder_1_subject": "RELANCE - Facture {invoice_number} en attente de paiement",
+  "reminder_1_template": "Bonjour,\n\nSauf erreur de notre part, nous n'avons pas encore reçu le règlement de la facture {invoice_number} d'un montant de {total_ttc} TTC, dont l'échéance est dépassée.\n\nDétails de la facture :\n- Entreprise : {company_name}\n- Période : {period}\n- Montant TTC : {total_ttc}\n\nNous vous remercions de bien vouloir procéder au règlement dans les plus brefs délais.\n\nSi votre paiement a été effectué entre-temps, nous vous prions de ne pas tenir compte de ce message.\n\nCordialement,\nL'équipe Peoples Post\n\n--\nPeoples Post SAS\n22 rue Emeriau, 75015 Paris\nvictor.estines@peoplespost.fr\nSIRET 98004432500010",
+  "reminder_2_subject": "URGENT - Facture {invoice_number} impayée - Suspension dans 7 jours",
+  "reminder_2_template": "Bonjour,\n\nMalgré notre précédente relance, nous constatons que la facture {invoice_number} d'un montant de {total_ttc} TTC reste impayée.\n\nDétails de la facture :\n- Entreprise : {company_name}\n- Période : {period}\n- Montant TTC : {total_ttc}\n\nSans régularisation de votre part dans un délai de 7 jours, nous serons dans l'obligation de suspendre vos accès à nos services.\n\nNous vous invitons à procéder au règlement immédiatement pour éviter toute interruption de service.\n\nSi votre paiement a été effectué entre-temps, nous vous prions de ne pas tenir compte de ce message.\n\nCordialement,\nL'équipe Peoples Post\n\n--\nPeoples Post SAS\n22 rue Emeriau, 75015 Paris\nvictor.estines@peoplespost.fr\nSIRET 98004432500010",
+  "reminder_3_subject": "DERNIER AVIS - Suspension imminente - Facture {invoice_number}",
+  "reminder_3_template": "Bonjour,\n\nCeci est notre dernier avis concernant la facture {invoice_number} d'un montant de {total_ttc} TTC.\n\nDétails de la facture :\n- Entreprise : {company_name}\n- Période : {period}\n- Montant TTC : {total_ttc}\n\nSans paiement de votre part dans les 24 heures, vos accès à nos services seront suspendus dès demain.\n\nPour éviter cette suspension, merci de procéder au règlement immédiat.\n\nSi votre paiement a été effectué entre-temps, nous vous prions de nous contacter immédiatement.\n\nCordialement,\nL'équipe Peoples Post\n\n--\nPeoples Post SAS\n22 rue Emeriau, 75015 Paris\nvictor.estines@peoplespost.fr\nSIRET 98004432500010"
+}

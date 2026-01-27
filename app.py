@@ -163,6 +163,9 @@ if not MONGO_URI:
 logger.info(f"Tentative de connexion MongoDB...")
 logger.info(f"URI format: {'SRV' if '+srv' in MONGO_URI else 'standard'}")
 
+# Variable globale pour stocker l'erreur de connexion (pour diagnostics)
+MONGO_CONNECTION_ERROR = None
+
 def resolve_srv_to_standard(srv_uri):
     """Résout une URI SRV MongoDB en format standard"""
     try:
@@ -198,8 +201,10 @@ def resolve_srv_to_standard(srv_uri):
 
 def connect_mongodb(uri, use_srv=True):
     """Tente de se connecter à MongoDB avec fallback sur format standard"""
+    global MONGO_CONNECTION_ERROR
     try:
         logger.info(f"Connexion MongoDB avec format {'SRV' if use_srv else 'standard'}...")
+        logger.info(f"URI hosts: {uri.split('@')[1].split('/')[0] if '@' in uri else 'unknown'}")
         client = MongoClient(
             uri,
             serverSelectionTimeoutMS=15000,
@@ -212,9 +217,12 @@ def connect_mongodb(uri, use_srv=True):
         # Test connection
         client.admin.command('ping')
         logger.info("Connexion MongoDB établie avec succès!")
+        MONGO_CONNECTION_ERROR = None
         return client
     except Exception as e:
-        logger.error(f"Erreur connexion MongoDB: {type(e).__name__}: {e}")
+        error_msg = f"{type(e).__name__}: {e}"
+        logger.error(f"Erreur connexion MongoDB: {error_msg}")
+        MONGO_CONNECTION_ERROR = error_msg
 
         # Si c'était une URI SRV, essayer avec le format standard
         if use_srv and '+srv' in uri:
@@ -451,6 +459,8 @@ def health_check():
         else:
             health['database'] = 'disconnected'
             health['status'] = 'degraded'
+            if MONGO_CONNECTION_ERROR:
+                health['startup_error'] = MONGO_CONNECTION_ERROR
     except Exception as e:
         health['database'] = 'error'
         health['database_error'] = str(e)

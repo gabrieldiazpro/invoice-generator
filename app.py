@@ -1,25 +1,37 @@
 #!/usr/bin/env python3
 """
 Peoples Post - Application web de génération de factures
+
+Version: 1.0.0
+Author: Peoples Post Team
 """
 
 import os
+import sys
 import json
 import uuid
 import shutil
 import smtplib
 import base64
+import logging
+import traceback
+import re
+from logging.handlers import RotatingFileHandler
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, g
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.exceptions import HTTPException
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from pymongo import MongoClient, ReturnDocument
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from bson.objectid import ObjectId
 from invoice_generator import (
     parse_csv, load_clients_config as load_clients_config_file,
@@ -29,20 +41,155 @@ from invoice_generator import (
     CLIENTS_CONFIG_FILE
 )
 
-app = Flask(__name__, static_folder='static', template_folder='templates')
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
-app.config['OUTPUT_FOLDER'] = os.path.join(os.path.dirname(__file__), 'output')
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'peoples-post-secret-key-2025')
+# =============================================================================
+# Configuration
+# =============================================================================
 
+# Environment
+ENV = os.environ.get('FLASK_ENV', 'production')
+DEBUG = ENV == 'development'
+VERSION = '1.0.0'
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+
+def setup_logging(app):
+    """Configure le logging structuré pour l'application"""
+    # Format du log
+    log_format = logging.Formatter(
+        '[%(asctime)s] %(levelname)s in %(module)s (%(funcName)s:%(lineno)d): %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # Niveau de log selon l'environnement
+    log_level = logging.DEBUG if DEBUG else logging.INFO
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(log_format)
+    console_handler.setLevel(log_level)
+
+    # File handler (rotating) - seulement en dev local
+    if DEBUG and not os.environ.get('RAILWAY_ENVIRONMENT'):
+        log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            os.path.join(log_dir, 'app.log'),
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5
+        )
+        file_handler.setFormatter(log_format)
+        file_handler.setLevel(logging.DEBUG)
+        app.logger.addHandler(file_handler)
+
+    # Configure app logger
+    app.logger.addHandler(console_handler)
+    app.logger.setLevel(log_level)
+
+    # Disable default Flask logger
+    app.logger.propagate = False
+
+    return app.logger
+
+
+# =============================================================================
+# Flask App Initialization
+# =============================================================================
+
+app = Flask(__name__, static_folder='static', template_folder='templates')
+
+# Vérification SECRET_KEY en production
+secret_key = os.environ.get('SECRET_KEY')
+if not secret_key:
+    if DEBUG:
+        secret_key = 'dev-secret-key-for-development-only'
+    else:
+        # Générer une clé temporaire en production si non définie (non recommandé)
+        import secrets
+        secret_key = secrets.token_hex(32)
+        print("ATTENTION: SECRET_KEY non défini en production! Sessions invalides après redémarrage.")
+
+# Configuration
+app.config.update(
+    MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max
+    UPLOAD_FOLDER=os.path.join(os.path.dirname(__file__), 'uploads'),
+    OUTPUT_FOLDER=os.path.join(os.path.dirname(__file__), 'output'),
+    SECRET_KEY=secret_key,
+    SESSION_COOKIE_SECURE=not DEBUG,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
+    JSON_AS_ASCII=False,
+    JSON_SORT_KEYS=False,
+)
+
+# Setup logging
+logger = setup_logging(app)
+
+# =============================================================================
+# Rate Limiting
+# =============================================================================
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+    strategy="fixed-window"
+)
+
+# Limites spécifiques
+LOGIN_LIMIT = "5 per minute"
+EMAIL_LIMIT = "10 per minute"
+API_LIMIT = "60 per minute"
+
+# =============================================================================
 # MongoDB Configuration
-MONGO_URI = os.environ.get('MONGO_URI', 'mongodb+srv://gabrieldiazpro_db_user:gabrieldiazpro_db_password@peoples-post.dabmazu.mongodb.net/?appName=peoples-post')
-mongo_client = MongoClient(MONGO_URI)
-db = mongo_client['invoice_generator']
-users_collection = db['users']
-email_config_collection = db['email_config']
-invoice_history_collection = db['invoice_history']
-clients_collection = db['clients']
+# =============================================================================
+
+# En production, MONGO_URI doit être défini comme variable d'environnement
+MONGO_URI = os.environ.get('MONGO_URI')
+
+if not MONGO_URI:
+    if DEBUG:
+        # Valeur par défaut uniquement en développement
+        MONGO_URI = 'mongodb+srv://gabrieldiazpro_db_user:gabrieldiazpro_db_password@peoples-post.dabmazu.mongodb.net/?appName=peoples-post'
+        logger.warning("MONGO_URI non défini - utilisation de la valeur par défaut (dev uniquement)")
+    else:
+        logger.critical("MONGO_URI non défini en production!")
+        MONGO_URI = None
+
+try:
+    mongo_client = MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=10000
+    )
+    # Test connection
+    mongo_client.admin.command('ping')
+    logger.info("Connexion MongoDB établie avec succès")
+except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+    logger.critical(f"Impossible de se connecter à MongoDB: {e}")
+    mongo_client = None
+
+db = mongo_client['invoice_generator'] if mongo_client else None
+users_collection = db['users'] if db else None
+email_config_collection = db['email_config'] if db else None
+invoice_history_collection = db['invoice_history'] if db else None
+clients_collection = db['clients'] if db else None
+
+
+def require_db(f):
+    """Décorateur pour vérifier la connexion à la base de données"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not mongo_client or not db:
+            logger.error("Base de données non disponible")
+            return jsonify({'error': 'Service temporairement indisponible'}), 503
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def load_clients_config():
@@ -97,10 +244,203 @@ def get_client_info(shipper_name, clients_config):
     clients_collection.replace_one({'_id': shipper_name}, client_doc, upsert=True)
     return default_client
 
+# =============================================================================
+# Validation Helpers
+# =============================================================================
+
+def validate_email(email):
+    """Valide le format d'une adresse email"""
+    if not email:
+        return False
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+
+def validate_password(password):
+    """Valide la force d'un mot de passe (min 6 caractères)"""
+    return password and len(password) >= 6
+
+
+def sanitize_string(value, max_length=500):
+    """Nettoie et limite la longueur d'une chaîne"""
+    if not isinstance(value, str):
+        return ''
+    return value.strip()[:max_length]
+
+
+# =============================================================================
+# Request Middleware
+# =============================================================================
+
+@app.before_request
+def before_request():
+    """Middleware exécuté avant chaque requête"""
+    g.request_start_time = datetime.now()
+    g.request_id = str(uuid.uuid4())[:8]
+
+    # Log la requête (sauf pour les assets statiques)
+    if not request.path.startswith('/static'):
+        logger.debug(f"[{g.request_id}] {request.method} {request.path} - IP: {request.remote_addr}")
+
+
+@app.after_request
+def after_request(response):
+    """Middleware exécuté après chaque requête"""
+    # Calcul du temps de réponse
+    if hasattr(g, 'request_start_time'):
+        duration = (datetime.now() - g.request_start_time).total_seconds() * 1000
+        response.headers['X-Response-Time'] = f"{duration:.2f}ms"
+
+        # Log la réponse (sauf pour les assets statiques)
+        if not request.path.startswith('/static'):
+            logger.debug(
+                f"[{getattr(g, 'request_id', '-')}] "
+                f"{request.method} {request.path} -> {response.status_code} "
+                f"({duration:.2f}ms)"
+            )
+
+    # Security Headers
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+
+    if not DEBUG:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+
+    return response
+
+
+# =============================================================================
+# Error Handlers
+# =============================================================================
+
+@app.errorhandler(400)
+def bad_request(error):
+    logger.warning(f"Bad Request: {request.path} - {error}")
+    return jsonify({'error': 'Requête invalide', 'code': 400}), 400
+
+
+@app.errorhandler(401)
+def unauthorized(error):
+    logger.warning(f"Unauthorized: {request.path} - IP: {request.remote_addr}")
+    return jsonify({'error': 'Non autorisé', 'code': 401}), 401
+
+
+@app.errorhandler(403)
+def forbidden(error):
+    logger.warning(f"Forbidden: {request.path} - User: {getattr(current_user, 'email', 'anonymous')}")
+    return jsonify({'error': 'Accès interdit', 'code': 403}), 403
+
+
+@app.errorhandler(404)
+def not_found(error):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Ressource non trouvée', 'code': 404}), 404
+    return render_template('404.html'), 404
+
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    logger.warning(f"File too large: {request.path}")
+    return jsonify({'error': 'Fichier trop volumineux (max 16MB)', 'code': 413}), 413
+
+
+@app.errorhandler(429)
+def rate_limit_exceeded(error):
+    logger.warning(f"Rate limit exceeded: {request.remote_addr}")
+    return jsonify({'error': 'Trop de requêtes, veuillez réessayer plus tard', 'code': 429}), 429
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f"Internal Error: {request.path} - {error}\n{traceback.format_exc()}")
+    return jsonify({'error': 'Erreur interne du serveur', 'code': 500}), 500
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Gestionnaire global des exceptions non gérées"""
+    # Laisser passer les erreurs HTTP
+    if isinstance(e, HTTPException):
+        return e
+
+    # Log l'erreur
+    logger.error(f"Unhandled Exception: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}")
+
+    # Retourner une erreur générique
+    return jsonify({
+        'error': 'Une erreur inattendue s\'est produite',
+        'code': 500,
+        'details': str(e) if DEBUG else None
+    }), 500
+
+
+# =============================================================================
+# Health Check & Status
+# =============================================================================
+
+@app.route('/health')
+def health_check():
+    """Endpoint de health check pour Railway et monitoring"""
+    health = {
+        'status': 'healthy',
+        'version': VERSION,
+        'environment': ENV,
+        'timestamp': datetime.now().isoformat()
+    }
+
+    # Check MongoDB
+    try:
+        if mongo_client:
+            mongo_client.admin.command('ping')
+            health['database'] = 'connected'
+        else:
+            health['database'] = 'disconnected'
+            health['status'] = 'degraded'
+    except Exception as e:
+        health['database'] = 'error'
+        health['database_error'] = str(e)
+        health['status'] = 'unhealthy'
+
+    status_code = 200 if health['status'] == 'healthy' else 503
+    return jsonify(health), status_code
+
+
+@app.route('/api/status')
+@login_required
+def api_status():
+    """Endpoint de status détaillé (authentifié)"""
+    status = {
+        'version': VERSION,
+        'environment': ENV,
+        'user': current_user.email,
+        'timestamp': datetime.now().isoformat()
+    }
+
+    # Stats MongoDB
+    try:
+        if db:
+            status['stats'] = {
+                'users': users_collection.count_documents({}),
+                'invoices': invoice_history_collection.count_documents({}),
+                'clients': clients_collection.count_documents({})
+            }
+    except Exception as e:
+        status['stats_error'] = str(e)
+
+    return jsonify(status)
+
+
+# =============================================================================
 # Flask-Login Configuration
+# =============================================================================
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+login_manager.login_message = 'Veuillez vous connecter pour accéder à cette page.'
+login_manager.login_message_category = 'warning'
 
 # Créer les dossiers si nécessaires
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -127,35 +467,60 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
+    """Charge un utilisateur depuis son ID"""
     try:
+        if not users_collection:
+            return None
         user_data = users_collection.find_one({'_id': ObjectId(user_id)})
         if user_data:
             return User(user_data)
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Erreur lors du chargement de l'utilisateur {user_id}: {e}")
     return None
 
 
 def admin_required(f):
+    """Décorateur pour restreindre l'accès aux administrateurs"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated or not current_user.is_admin():
+            logger.warning(f"Accès admin refusé: {getattr(current_user, 'email', 'anonymous')} sur {request.path}")
             return jsonify({'error': 'Accès non autorisé'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def super_admin_required(f):
+    """Décorateur pour restreindre l'accès aux super administrateurs"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_super_admin():
+            logger.warning(f"Accès super admin refusé: {getattr(current_user, 'email', 'anonymous')} sur {request.path}")
+            return jsonify({'error': 'Accès réservé au super administrateur'}), 403
         return f(*args, **kwargs)
     return decorated_function
 
 
 def init_super_admin():
     """Crée le super admin si il n'existe pas"""
-    if not users_collection.find_one({'email': 'gabriel@peoplespost.fr'}):
-        users_collection.insert_one({
-            'email': 'gabriel@peoplespost.fr',
-            'password': generate_password_hash('admin123'),
-            'name': 'Gabriel',
-            'role': 'super_admin',
-            'created_at': datetime.now()
-        })
-        print("Super admin créé: gabriel@peoplespost.fr / admin123")
+    if not users_collection:
+        logger.warning("Impossible de créer le super admin: base de données non disponible")
+        return
+
+    try:
+        if not users_collection.find_one({'email': 'gabriel@peoplespost.fr'}):
+            users_collection.insert_one({
+                'email': 'gabriel@peoplespost.fr',
+                'password': generate_password_hash('admin123'),
+                'name': 'Gabriel',
+                'role': 'super_admin',
+                'created_at': datetime.now()
+            })
+            logger.info("Super admin créé: gabriel@peoplespost.fr")
+        else:
+            logger.debug("Super admin déjà existant")
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du super admin: {e}")
 
 
 def get_user_sender_info():
@@ -693,13 +1058,17 @@ def send_invoice_email(invoice_data, email_config, batch_folder, sender_name=Non
         server.send_message(msg)
         server.quit()
 
+        logger.info(f"Email facture envoyé: {invoice_data.get('invoice_number')} -> {recipient_email}")
         return {'success': True}
 
     except smtplib.SMTPAuthenticationError:
+        logger.error(f"Échec auth SMTP pour facture {invoice_data.get('invoice_number')}")
         return {'success': False, 'error': 'Échec d\'authentification SMTP. Vérifiez vos identifiants.'}
     except smtplib.SMTPException as e:
+        logger.error(f"Erreur SMTP envoi facture {invoice_data.get('invoice_number')}: {e}")
         return {'success': False, 'error': f'Erreur SMTP: {str(e)}'}
     except Exception as e:
+        logger.error(f"Erreur envoi facture {invoice_data.get('invoice_number')}: {e}")
         return {'success': False, 'error': f'Erreur: {str(e)}'}
 
 
@@ -793,13 +1162,17 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
         server.send_message(msg)
         server.quit()
 
+        logger.info(f"Relance R{reminder_type} envoyée: {invoice_data.get('invoice_number')} -> {recipient_email}")
         return {'success': True}
 
     except smtplib.SMTPAuthenticationError:
+        logger.error(f"Échec auth SMTP pour relance {invoice_data.get('invoice_number')}")
         return {'success': False, 'error': 'Échec d\'authentification SMTP. Vérifiez vos identifiants.'}
     except smtplib.SMTPException as e:
+        logger.error(f"Erreur SMTP relance {invoice_data.get('invoice_number')}: {e}")
         return {'success': False, 'error': f'Erreur SMTP: {str(e)}'}
     except Exception as e:
+        logger.error(f"Erreur relance {invoice_data.get('invoice_number')}: {e}")
         return {'success': False, 'error': f'Erreur: {str(e)}'}
 
 
@@ -808,28 +1181,55 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
 # ============================================================================
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit(LOGIN_LIMIT)
 def login():
+    """Route de connexion"""
     if current_user.is_authenticated:
         return redirect(url_for('index'))
+
     if request.method == 'POST':
         data = request.get_json() if request.is_json else request.form
-        email = data.get('email', '').lower().strip()
+        email = sanitize_string(data.get('email', '')).lower()
         password = data.get('password', '')
-        user_data = users_collection.find_one({'email': email})
+
+        # Validation
+        if not email or not password:
+            logger.warning(f"Tentative de connexion avec données manquantes - IP: {request.remote_addr}")
+            if request.is_json:
+                return jsonify({'success': False, 'error': 'Email et mot de passe requis'}), 400
+            return render_template('login.html', error='Email et mot de passe requis')
+
+        # Vérification
+        user_data = users_collection.find_one({'email': email}) if users_collection else None
+
         if user_data and check_password_hash(user_data['password'], password):
-            login_user(User(user_data))
+            user = User(user_data)
+            login_user(user, remember=True)
+            logger.info(f"Connexion réussie: {email} - IP: {request.remote_addr}")
+
+            # Mettre à jour la dernière connexion
+            users_collection.update_one(
+                {'_id': user_data['_id']},
+                {'$set': {'last_login': datetime.now()}}
+            )
+
             if request.is_json:
                 return jsonify({'success': True, 'redirect': url_for('index')})
-            return redirect(url_for('index'))
+            return redirect(request.args.get('next') or url_for('index'))
+
+        logger.warning(f"Échec de connexion: {email} - IP: {request.remote_addr}")
         if request.is_json:
             return jsonify({'success': False, 'error': 'Email ou mot de passe incorrect'}), 401
         return render_template('login.html', error='Email ou mot de passe incorrect')
+
     return render_template('login.html')
 
 
 @app.route('/logout')
 @login_required
 def logout():
+    """Route de déconnexion"""
+    logger.info(f"Déconnexion: {current_user.email}")
     logout_user()
     return redirect(url_for('login'))
 
@@ -848,27 +1248,52 @@ def get_users():
 @login_required
 @admin_required
 def create_user():
+    """Crée un nouvel utilisateur"""
     data = request.get_json()
-    email = data.get('email', '').lower().strip()
-    password = data.get('password', '')
-    name = data.get('name', '')
-    role = data.get('role', 'user')
-    send_welcome = data.get('send_welcome_email', True)  # Envoyer email par défaut
 
-    if not email or not password:
-        return jsonify({'error': 'Email et mot de passe requis'}), 400
+    # Validation et nettoyage des entrées
+    email = sanitize_string(data.get('email', '')).lower()
+    password = data.get('password', '')
+    name = sanitize_string(data.get('name', ''))
+    role = data.get('role', 'user')
+    send_welcome = data.get('send_welcome_email', True)
+
+    # Validation email
+    if not validate_email(email):
+        logger.warning(f"Création utilisateur: email invalide - {email}")
+        return jsonify({'error': 'Format d\'email invalide'}), 400
+
+    # Validation mot de passe
+    if not validate_password(password):
+        return jsonify({'error': 'Le mot de passe doit contenir au moins 6 caractères'}), 400
+
+    # Vérifier si l'email existe déjà
     if users_collection.find_one({'email': email}):
+        logger.warning(f"Création utilisateur: email déjà existant - {email}")
         return jsonify({'error': 'Cet email existe déjà'}), 400
+
+    # Vérification des droits pour les rôles admin
     if role in ['admin', 'super_admin'] and not current_user.is_super_admin():
+        logger.warning(f"Tentative de création admin non autorisée par {current_user.email}")
         return jsonify({'error': 'Seul le super admin peut créer des administrateurs'}), 403
+
+    # Valider le rôle
+    if role not in ['user', 'admin', 'super_admin']:
+        role = 'user'
 
     # Sauvegarder le mot de passe en clair pour l'email avant le hash
     temp_password = password
 
     result = users_collection.insert_one({
-        'email': email, 'password': generate_password_hash(password),
-        'name': name, 'role': role, 'created_at': datetime.now()
+        'email': email,
+        'password': generate_password_hash(password),
+        'name': name,
+        'role': role,
+        'created_at': datetime.now(),
+        'created_by': current_user.email
     })
+
+    logger.info(f"Utilisateur créé: {email} (rôle: {role}) par {current_user.email}")
 
     response_data = {
         'success': True,
@@ -879,8 +1304,11 @@ def create_user():
     if send_welcome:
         email_result = send_welcome_email(email, name, temp_password)
         response_data['welcome_email_sent'] = email_result.get('success', False)
-        if not email_result.get('success'):
+        if email_result.get('success'):
+            logger.info(f"Email de bienvenue envoyé à {email}")
+        else:
             response_data['welcome_email_error'] = email_result.get('error', 'Erreur inconnue')
+            logger.warning(f"Échec envoi email bienvenue à {email}: {email_result.get('error')}")
 
     return jsonify(response_data)
 
@@ -1241,6 +1669,7 @@ def update_email_config():
 
 
 @app.route('/api/email/send/<batch_id>/<invoice_number>', methods=['POST'])
+@limiter.limit(EMAIL_LIMIT)
 @login_required
 def send_single_email(batch_id, invoice_number):
     """Envoie un email pour une facture spécifique"""
@@ -1286,6 +1715,7 @@ def send_single_email(batch_id, invoice_number):
 
 
 @app.route('/api/email/send-all/<batch_id>', methods=['POST'])
+@limiter.limit(EMAIL_LIMIT)
 @login_required
 def send_all_emails(batch_id):
     """Envoie les emails pour toutes les factures du batch"""

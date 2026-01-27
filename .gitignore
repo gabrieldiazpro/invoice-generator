@@ -4,4 +4,14 @@ __pycache__/
 .DS_Store
 uploads/
 output/
+logs/
 *.log
+
+# Config files with sensitive data
+email_config.json
+clients.json
+invoice_history.json
+
+# Environment
+.env
+.env.local

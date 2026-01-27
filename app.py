@@ -866,18 +866,30 @@ def update_email_config():
     data = request.json
     config = load_email_config()
 
-    # Mettre à jour les champs fournis
-    for key in ['smtp_server', 'smtp_port', 'smtp_username', 'sender_email',
-                'sender_name', 'email_subject', 'email_template',
+    # Champs SMTP réservés au super admin
+    smtp_fields = ['smtp_server', 'smtp_port', 'smtp_username', 'smtp_password']
+
+    # Vérifier si des champs SMTP sont modifiés
+    smtp_modified = any(key in data for key in smtp_fields)
+    if smtp_modified and not current_user.is_super_admin():
+        return jsonify({'error': 'Seul le super admin peut modifier la configuration SMTP'}), 403
+
+    # Mettre à jour les champs fournis (non-SMTP pour tous, SMTP pour super admin)
+    for key in ['sender_email', 'sender_name', 'email_subject', 'email_template',
                 'reminder_1_subject', 'reminder_1_template',
                 'reminder_2_subject', 'reminder_2_template',
                 'reminder_3_subject', 'reminder_3_template']:
         if key in data:
             config[key] = data[key]
 
-    # Mot de passe uniquement s'il est fourni et non vide
-    if data.get('smtp_password'):
-        config['smtp_password'] = data['smtp_password']
+    # Champs SMTP uniquement pour super admin
+    if current_user.is_super_admin():
+        for key in ['smtp_server', 'smtp_port', 'smtp_username']:
+            if key in data:
+                config[key] = data[key]
+        # Mot de passe uniquement s'il est fourni et non vide
+        if data.get('smtp_password'):
+            config['smtp_password'] = data['smtp_password']
 
     save_email_config(config)
 

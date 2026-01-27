@@ -251,6 +251,7 @@
                     <p>Configurez les paramètres d'envoi des factures par email</p>
                 </div>
 
+                {% if user.is_super_admin() %}
                 <div class="card">
                     <div class="card-header">
                         <h2>Configuration SMTP</h2>
@@ -291,6 +292,7 @@
                         </form>
                     </div>
                 </div>
+                {% endif %}
 
                 <div class="card">
                     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">

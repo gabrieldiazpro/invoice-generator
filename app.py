@@ -152,12 +152,40 @@ def optional_limit(limit_string):
 
 # Configuration MongoDB
 # En production, MONGO_URI devrait être défini comme variable d'environnement
-MONGO_URI = os.environ.get('MONGO_URI', '').strip()
+MONGO_URI_ENV = os.environ.get('MONGO_URI', '').strip()
 
-if not MONGO_URI:
-    # Fallback - URI standard (non-SRV) pour compatibilité Railway
-    MONGO_URI = 'mongodb://gabrieldiazpro_db_user:gabrieldiazpro_db_password@ac-jcx3ul9-shard-00-00.dabmazu.mongodb.net:27017,ac-jcx3ul9-shard-00-01.dabmazu.mongodb.net:27017,ac-jcx3ul9-shard-00-02.dabmazu.mongodb.net:27017/?authSource=admin&replicaSet=atlas-eawm13-shard-0&tls=true'
-    if not DEBUG:
+# URI standard (non-SRV) pour compatibilité Railway
+MONGO_URI_FALLBACK = 'mongodb://gabrieldiazpro_db_user:gabrieldiazpro_db_password@ac-jcx3ul9-shard-00-00.dabmazu.mongodb.net:27017,ac-jcx3ul9-shard-00-01.dabmazu.mongodb.net:27017,ac-jcx3ul9-shard-00-02.dabmazu.mongodb.net:27017/?authSource=admin&replicaSet=atlas-eawm13-shard-0&tls=true'
+
+def validate_mongo_uri(uri):
+    """Vérifie si l'URI MongoDB semble valide"""
+    if not uri:
+        return False
+    # Doit commencer par mongodb:// ou mongodb+srv://
+    if not uri.startswith('mongodb://') and not uri.startswith('mongodb+srv://'):
+        return False
+    # Ne doit pas avoir de labels DNS vides (// consécutifs ou ..)
+    if '//' in uri.split('://')[1].split('?')[0] or '..' in uri or '@.' in uri or './' in uri:
+        return False
+    # Doit avoir au moins un host
+    try:
+        after_protocol = uri.split('://')[1]
+        host_part = after_protocol.split('@')[1].split('/')[0] if '@' in after_protocol else after_protocol.split('/')[0]
+        if not host_part or host_part.startswith('.') or host_part.endswith('.'):
+            return False
+    except:
+        return False
+    return True
+
+# Utiliser l'URI de l'environnement seulement si elle est valide
+if MONGO_URI_ENV and validate_mongo_uri(MONGO_URI_ENV):
+    MONGO_URI = MONGO_URI_ENV
+    logger.info("Utilisation de MONGO_URI depuis l'environnement")
+else:
+    MONGO_URI = MONGO_URI_FALLBACK
+    if MONGO_URI_ENV:
+        logger.warning(f"MONGO_URI invalide dans l'environnement, utilisation du fallback")
+    else:
         logger.warning("MONGO_URI non défini - utilisation du fallback")
 
 logger.info(f"Tentative de connexion MongoDB...")

@@ -1,8 +1,10 @@
 blinker==1.9.0
 charset-normalizer==3.4.4
 click==8.3.1
+dnspython==2.8.0
 et_xmlfile==2.0.0
 Flask==3.1.2
+Flask-Login==0.6.3
 itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.3
@@ -10,6 +12,7 @@ numpy==2.4.1
 openpyxl==3.1.5
 pandas==3.0.0
 pillow==12.1.0
+pymongo==4.16.0
 python-dateutil==2.9.0.post0
 reportlab==4.4.9
 six==1.17.0

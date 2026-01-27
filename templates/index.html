@@ -21,7 +21,14 @@
                 <a href="#" class="nav-link" data-tab="history">Historique</a>
                 <a href="#" class="nav-link" data-tab="clients">Clients</a>
                 <a href="#" class="nav-link" data-tab="settings">Paramètres</a>
+                {% if user and user.is_admin() %}
+                <a href="#" class="nav-link" data-tab="users">Utilisateurs</a>
+                {% endif %}
             </nav>
+            <div class="user-menu">
+                <span class="user-name">{{ user.name or user.email }}</span>
+                <a href="/logout" class="btn-logout">Déconnexion</a>
+            </div>
         </div>
     </header>
 
@@ -373,6 +380,64 @@ Veuillez trouver ci-joint votre facture..."></textarea>
                     </div>
                 </div>
             </section>
+
+            <!-- Tab: Utilisateurs (Admin only) -->
+            {% if user and user.is_admin() %}
+            <section id="tab-users" class="tab-content">
+                <div class="page-header">
+                    <h1>Gestion des Utilisateurs</h1>
+                    <p>Gérez les comptes utilisateurs de l'application</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h2>Utilisateurs</h2>
+                        <button class="btn btn-primary" id="btn-add-user">
+                            + Ajouter un utilisateur
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <table class="data-table" id="users-table">
+                            <thead>
+                                <tr>
+                                    <th>Nom</th>
+                                    <th>Email</th>
+                                    <th>Rôle</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-list">
+                                <!-- Rempli par JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Section Changer mon mot de passe -->
+                <div class="card" style="margin-top: 24px;">
+                    <div class="card-header">
+                        <h2>Changer mon mot de passe</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="change-password-form">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="current-password">Mot de passe actuel</label>
+                                    <input type="password" id="current-password" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="new-password">Nouveau mot de passe</label>
+                                    <input type="password" id="new-password" required>
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">Changer le mot de passe</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+            {% endif %}
         </div>
     </main>
 
@@ -479,9 +544,65 @@ Veuillez trouver ci-joint votre facture..."></textarea>
         </div>
     </div>
 
+    <!-- Modal Utilisateur -->
+    {% if user and user.is_admin() %}
+    <div class="modal hidden" id="user-modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="user-modal-title">Ajouter un utilisateur</h3>
+                <button class="modal-close" id="user-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="user-form">
+                    <input type="hidden" id="user-id">
+                    <div class="form-group">
+                        <label for="user-name">Nom</label>
+                        <input type="text" id="user-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="user-email">Email</label>
+                        <input type="email" id="user-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="user-password">Mot de passe</label>
+                        <input type="password" id="user-password">
+                        <small class="form-hint" id="password-hint-user">Laissez vide pour ne pas modifier</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="user-role">Rôle</label>
+                        <select id="user-role">
+                            <option value="user">Utilisateur</option>
+                            <option value="admin">Administrateur</option>
+                            {% if user.is_super_admin() %}
+                            <option value="super_admin">Super Admin</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-user">Annuler</button>
+                <button class="btn btn-primary" id="btn-save-user">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Toast notifications -->
     <div class="toast-container" id="toast-container"></div>
 
+    <script>
+        // Pass user info to JavaScript
+        window.currentUser = {
+            id: '{{ user.id }}',
+            email: '{{ user.email }}',
+            name: '{{ user.name }}',
+            role: '{{ user.role }}',
+            isAdmin: {{ 'true' if user.is_admin() else 'false' }},
+            isSuperAdmin: {{ 'true' if user.is_super_admin() else 'false' }}
+        };
+    </script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

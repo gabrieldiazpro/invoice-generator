@@ -1461,3 +1461,130 @@ a:hover {
     opacity: 0.4;
     cursor: not-allowed;
 }
+
+/* ==========================================================================
+   User Menu & Authentication
+   ========================================================================== */
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.user-menu {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.user-name {
+    color: var(--color-gray-600);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.btn-logout {
+    padding: 8px 16px;
+    background-color: transparent;
+    color: var(--color-gray-600);
+    border: 1px solid var(--color-gray-300);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: var(--transition-fast);
+}
+
+.btn-logout:hover {
+    background-color: var(--color-error-light);
+    border-color: var(--color-error);
+    color: var(--color-error);
+}
+
+/* User Table */
+#users-table {
+    width: 100%;
+}
+
+#users-table th,
+#users-table td {
+    text-align: left;
+    padding: 12px 16px;
+}
+
+.role-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.role-badge.super_admin {
+    background-color: #dbeafe;
+    color: #1d4ed8;
+}
+
+.role-badge.admin {
+    background-color: #fef3c7;
+    color: #d97706;
+}
+
+.role-badge.user {
+    background-color: var(--color-gray-100);
+    color: var(--color-gray-600);
+}
+
+.user-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-edit-user,
+.btn-delete-user {
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: var(--transition-fast);
+}
+
+.btn-edit-user {
+    background-color: var(--color-gray-100);
+    color: var(--color-gray-700);
+}
+
+.btn-edit-user:hover {
+    background-color: var(--color-primary);
+    color: white;
+}
+
+.btn-delete-user {
+    background-color: var(--color-error-light);
+    color: var(--color-error);
+}
+
+.btn-delete-user:hover {
+    background-color: var(--color-error);
+    color: white;
+}
+
+/* Select styling */
+select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--color-gray-200);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    background-color: white;
+    cursor: pointer;
+}
+
+select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(48, 38, 240, 0.1);
+}

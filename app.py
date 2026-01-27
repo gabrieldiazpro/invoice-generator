@@ -14,8 +14,13 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
+from functools import wraps
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 from invoice_generator import (
     parse_csv, load_clients_config, save_clients_config,
     get_client_info, InvoicePDFGenerator, generate_invoice_number, format_currency
@@ -25,10 +30,76 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
 app.config['OUTPUT_FOLDER'] = os.path.join(os.path.dirname(__file__), 'output')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'peoples-post-secret-key-2025')
+
+# MongoDB Configuration
+MONGO_URI = os.environ.get('MONGO_URI', 'mongodb+srv://gabrieldiazpro_db_user:gabrieldiazpro_db_password@peoples-post.dabmazu.mongodb.net/?appName=peoples-post')
+mongo_client = MongoClient(MONGO_URI)
+db = mongo_client['invoice_generator']
+users_collection = db['users']
+
+# Flask-Login Configuration
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
 
 # Créer les dossiers si nécessaires
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
+
+
+# ============================================================================
+# User Model & Authentication
+# ============================================================================
+
+class User(UserMixin):
+    def __init__(self, user_data):
+        self.id = str(user_data['_id'])
+        self.email = user_data['email']
+        self.name = user_data.get('name', '')
+        self.role = user_data.get('role', 'user')
+
+    def is_admin(self):
+        return self.role in ['admin', 'super_admin']
+
+    def is_super_admin(self):
+        return self.role == 'super_admin'
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    try:
+        user_data = users_collection.find_one({'_id': ObjectId(user_id)})
+        if user_data:
+            return User(user_data)
+    except:
+        pass
+    return None
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin():
+            return jsonify({'error': 'Accès non autorisé'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def init_super_admin():
+    """Crée le super admin si il n'existe pas"""
+    if not users_collection.find_one({'email': 'gabriel@peoplespost.fr'}):
+        users_collection.insert_one({
+            'email': 'gabriel@peoplespost.fr',
+            'password': generate_password_hash('admin123'),
+            'name': 'Gabriel',
+            'role': 'super_admin',
+            'created_at': datetime.now()
+        })
+        print("Super admin créé: gabriel@peoplespost.fr / admin123")
+
+
+init_super_admin()
 
 ALLOWED_EXTENSIONS = {'csv'}
 EMAIL_CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'email_config.json')
@@ -433,13 +504,150 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
         return {'success': False, 'error': f'Erreur: {str(e)}'}
 
 
+# ============================================================================
+# Routes Authentification
+# ============================================================================
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        data = request.get_json() if request.is_json else request.form
+        email = data.get('email', '').lower().strip()
+        password = data.get('password', '')
+        user_data = users_collection.find_one({'email': email})
+        if user_data and check_password_hash(user_data['password'], password):
+            login_user(User(user_data))
+            if request.is_json:
+                return jsonify({'success': True, 'redirect': url_for('index')})
+            return redirect(url_for('index'))
+        if request.is_json:
+            return jsonify({'success': False, 'error': 'Email ou mot de passe incorrect'}), 401
+        return render_template('login.html', error='Email ou mot de passe incorrect')
+    return render_template('login.html')
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+
+@app.route('/api/users', methods=['GET'])
+@login_required
+@admin_required
+def get_users():
+    users = list(users_collection.find({}, {'password': 0}))
+    for user in users:
+        user['_id'] = str(user['_id'])
+    return jsonify({'success': True, 'users': users})
+
+
+@app.route('/api/users', methods=['POST'])
+@login_required
+@admin_required
+def create_user():
+    data = request.get_json()
+    email = data.get('email', '').lower().strip()
+    password = data.get('password', '')
+    name = data.get('name', '')
+    role = data.get('role', 'user')
+    if not email or not password:
+        return jsonify({'error': 'Email et mot de passe requis'}), 400
+    if users_collection.find_one({'email': email}):
+        return jsonify({'error': 'Cet email existe déjà'}), 400
+    if role in ['admin', 'super_admin'] and not current_user.is_super_admin():
+        return jsonify({'error': 'Seul le super admin peut créer des administrateurs'}), 403
+    result = users_collection.insert_one({
+        'email': email, 'password': generate_password_hash(password),
+        'name': name, 'role': role, 'created_at': datetime.now()
+    })
+    return jsonify({'success': True, 'user': {'_id': str(result.inserted_id), 'email': email, 'name': name, 'role': role}})
+
+
+@app.route('/api/users/<user_id>', methods=['PUT'])
+@login_required
+@admin_required
+def update_user(user_id):
+    data = request.get_json()
+    try:
+        user = users_collection.find_one({'_id': ObjectId(user_id)})
+        if not user:
+            return jsonify({'error': 'Utilisateur non trouvé'}), 404
+        if user.get('role') == 'super_admin' and not current_user.is_super_admin():
+            return jsonify({'error': 'Vous ne pouvez pas modifier le super admin'}), 403
+        update_data = {}
+        if 'name' in data:
+            update_data['name'] = data['name']
+        if 'email' in data:
+            update_data['email'] = data['email'].lower().strip()
+        if 'password' in data and data['password']:
+            update_data['password'] = generate_password_hash(data['password'])
+        if 'role' in data:
+            if data['role'] in ['admin', 'super_admin'] and not current_user.is_super_admin():
+                return jsonify({'error': 'Seul le super admin peut attribuer ce rôle'}), 403
+            update_data['role'] = data['role']
+        if update_data:
+            users_collection.update_one({'_id': ObjectId(user_id)}, {'$set': update_data})
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/users/<user_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def delete_user(user_id):
+    try:
+        user = users_collection.find_one({'_id': ObjectId(user_id)})
+        if not user:
+            return jsonify({'error': 'Utilisateur non trouvé'}), 404
+        if user.get('role') == 'super_admin':
+            return jsonify({'error': 'Impossible de supprimer le super admin'}), 403
+        if str(user['_id']) == current_user.id:
+            return jsonify({'error': 'Vous ne pouvez pas supprimer votre propre compte'}), 403
+        users_collection.delete_one({'_id': ObjectId(user_id)})
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/me', methods=['GET'])
+@login_required
+def get_current_user():
+    return jsonify({'success': True, 'user': {'id': current_user.id, 'email': current_user.email, 'name': current_user.name, 'role': current_user.role}})
+
+
+@app.route('/api/me/password', methods=['PUT'])
+@login_required
+def change_my_password():
+    data = request.get_json()
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+    if not current_password or not new_password:
+        return jsonify({'error': 'Mot de passe actuel et nouveau requis'}), 400
+    user_data = users_collection.find_one({'_id': ObjectId(current_user.id)})
+    if not check_password_hash(user_data['password'], current_password):
+        return jsonify({'error': 'Mot de passe actuel incorrect'}), 401
+    users_collection.update_one({'_id': ObjectId(current_user.id)}, {'$set': {'password': generate_password_hash(new_password)}})
+    return jsonify({'success': True})
+
+
+# ============================================================================
+# Routes Principales
+# ============================================================================
+
 @app.route('/')
+@login_required
 def index():
     """Page d'accueil"""
-    return render_template('index.html')
+    return render_template('index.html', user=current_user)
 
 
 @app.route('/api/upload', methods=['POST'])
+@login_required
 def upload_csv():
     """Upload et analyse d'un fichier CSV"""
     if 'file' not in request.files:
@@ -505,6 +713,7 @@ def upload_csv():
 
 
 @app.route('/api/generate', methods=['POST'])
+@login_required
 def generate_invoices():
     """Génère les factures PDF"""
     data = request.json
@@ -603,6 +812,7 @@ def generate_invoices():
 
 
 @app.route('/api/download/<batch_id>/<filename>')
+@login_required
 def download_invoice(batch_id, filename):
     """Télécharge une facture individuelle"""
     batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
@@ -615,6 +825,7 @@ def download_invoice(batch_id, filename):
 
 
 @app.route('/api/download-all/<batch_id>')
+@login_required
 def download_all_invoices(batch_id):
     """Télécharge toutes les factures en ZIP"""
     batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
@@ -638,6 +849,7 @@ def download_all_invoices(batch_id):
 # ============================================================================
 
 @app.route('/api/email/config', methods=['GET'])
+@login_required
 def get_email_config():
     """Récupère la configuration email (sans le mot de passe)"""
     config = load_email_config()
@@ -648,6 +860,7 @@ def get_email_config():
 
 
 @app.route('/api/email/config', methods=['PUT'])
+@login_required
 def update_email_config():
     """Met à jour la configuration email"""
     data = request.json
@@ -675,6 +888,7 @@ def update_email_config():
 
 
 @app.route('/api/email/send/<batch_id>/<invoice_number>', methods=['POST'])
+@login_required
 def send_single_email(batch_id, invoice_number):
     """Envoie un email pour une facture spécifique"""
     batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
@@ -716,6 +930,7 @@ def send_single_email(batch_id, invoice_number):
 
 
 @app.route('/api/email/send-all/<batch_id>', methods=['POST'])
+@login_required
 def send_all_emails(batch_id):
     """Envoie les emails pour toutes les factures du batch"""
     batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
@@ -793,6 +1008,7 @@ def send_all_emails(batch_id):
 
 
 @app.route('/api/email/status/<batch_id>', methods=['GET'])
+@login_required
 def get_email_status(batch_id):
     """Récupère le statut d'envoi des emails pour un batch"""
     batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
@@ -811,6 +1027,7 @@ def get_email_status(batch_id):
 
 
 @app.route('/api/email/preview/<email_type>', methods=['GET'])
+@login_required
 def preview_email(email_type):
     """Génère une prévisualisation de l'email HTML"""
     if email_type not in ['invoice', 'reminder_1', 'reminder_2', 'reminder_3']:
@@ -990,6 +1207,7 @@ def create_html_email_preview(body_text, invoice_data, email_type='invoice'):
 # ============================================================================
 
 @app.route('/api/history', methods=['GET'])
+@login_required
 def get_invoice_history():
     """Récupère l'historique des factures"""
     history = load_invoice_history()
@@ -1017,6 +1235,7 @@ def get_invoice_history():
 
 
 @app.route('/api/history/<invoice_id>', methods=['DELETE'])
+@login_required
 def delete_from_history(invoice_id):
     """Supprime une facture de l'historique"""
     history = load_invoice_history()
@@ -1026,6 +1245,7 @@ def delete_from_history(invoice_id):
 
 
 @app.route('/api/history/download/<invoice_id>')
+@login_required
 def download_from_history(invoice_id):
     """Télécharge une facture depuis l'historique"""
     history = load_invoice_history()
@@ -1049,6 +1269,7 @@ def download_from_history(invoice_id):
 
 
 @app.route('/api/history/clear', methods=['DELETE'])
+@login_required
 def clear_history():
     """Vide l'historique des factures"""
     save_invoice_history([])
@@ -1056,6 +1277,7 @@ def clear_history():
 
 
 @app.route('/api/history/<invoice_id>/payment', methods=['PUT'])
+@login_required
 def update_payment_status(invoice_id):
     """Met à jour le statut de paiement d'une facture"""
     data = request.json
@@ -1072,6 +1294,7 @@ def update_payment_status(invoice_id):
 
 
 @app.route('/api/history/<invoice_id>/reminder/<int:reminder_type>', methods=['POST'])
+@login_required
 def send_single_reminder(invoice_id, reminder_type):
     """Envoie un email de relance pour une facture spécifique
 
@@ -1128,6 +1351,7 @@ def send_single_reminder(invoice_id, reminder_type):
 
 
 @app.route('/api/history/reminders/send-all/<int:reminder_type>', methods=['POST'])
+@login_required
 def send_all_reminders(reminder_type):
     """Envoie des relances de type spécifique pour toutes les factures impayées"""
     if reminder_type not in [1, 2, 3]:
@@ -1228,6 +1452,7 @@ def send_all_reminders(reminder_type):
 # ============================================================================
 
 @app.route('/api/clients', methods=['GET'])
+@login_required
 def get_clients():
     """Récupère la liste des clients"""
     clients = load_clients_config()
@@ -1235,6 +1460,7 @@ def get_clients():
 
 
 @app.route('/api/clients/<client_name>', methods=['PUT'])
+@login_required
 def update_client(client_name):
     """Met à jour les informations d'un client"""
     clients = load_clients_config()
@@ -1259,6 +1485,7 @@ def update_client(client_name):
 
 
 @app.route('/api/clients/<client_name>', methods=['DELETE'])
+@login_required
 def delete_client(client_name):
     """Supprime un client"""
     clients = load_clients_config()

@@ -52,6 +52,8 @@ document.querySelectorAll('.nav-link').forEach(link => {
             loadEmailConfig();
         } else if (tabId === 'history') {
             loadHistory();
+        } else if (tabId === 'users') {
+            loadUsers();
         }
     });
 });
@@ -1222,6 +1224,229 @@ function showToast(message, type = 'info') {
 }
 
 // ==========================================================================
+// User Management (Admin only)
+// ==========================================================================
+
+let usersData = [];
+
+async function loadUsers() {
+    if (!window.currentUser || !window.currentUser.isAdmin) return;
+
+    try {
+        const response = await fetch('/api/users');
+        const data = await response.json();
+
+        if (data.success) {
+            usersData = data.users;
+            renderUsers();
+        }
+    } catch (error) {
+        console.error('Error loading users:', error);
+        showToast('Erreur lors du chargement des utilisateurs', 'error');
+    }
+}
+
+function renderUsers() {
+    const usersList = document.getElementById('users-list');
+    if (!usersList) return;
+
+    if (usersData.length === 0) {
+        usersList.innerHTML = '<tr><td colspan="4" class="empty-message">Aucun utilisateur</td></tr>';
+        return;
+    }
+
+    const roleLabels = {
+        'super_admin': 'Super Admin',
+        'admin': 'Administrateur',
+        'user': 'Utilisateur'
+    };
+
+    usersList.innerHTML = usersData.map(user => `
+        <tr>
+            <td>${escapeHtml(user.name) || '-'}</td>
+            <td>${escapeHtml(user.email)}</td>
+            <td><span class="role-badge ${user.role}">${roleLabels[user.role] || user.role}</span></td>
+            <td>
+                <div class="user-actions">
+                    ${user.role !== 'super_admin' || window.currentUser.isSuperAdmin ? `
+                        <button class="btn-edit-user" data-id="${user._id}">Modifier</button>
+                        ${user._id !== window.currentUser.id && user.role !== 'super_admin' ? `
+                            <button class="btn-delete-user" data-id="${user._id}">Supprimer</button>
+                        ` : ''}
+                    ` : ''}
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+    // Add event listeners
+    usersList.querySelectorAll('.btn-edit-user').forEach(btn => {
+        btn.addEventListener('click', () => editUser(btn.dataset.id));
+    });
+
+    usersList.querySelectorAll('.btn-delete-user').forEach(btn => {
+        btn.addEventListener('click', () => deleteUser(btn.dataset.id));
+    });
+}
+
+function openUserModal(user = null) {
+    const modal = document.getElementById('user-modal');
+    const title = document.getElementById('user-modal-title');
+    const passwordHint = document.getElementById('password-hint-user');
+
+    if (user) {
+        title.textContent = 'Modifier l\'utilisateur';
+        document.getElementById('user-id').value = user._id;
+        document.getElementById('user-name').value = user.name || '';
+        document.getElementById('user-email').value = user.email;
+        document.getElementById('user-password').value = '';
+        document.getElementById('user-role').value = user.role;
+        passwordHint.style.display = 'block';
+        document.getElementById('user-password').required = false;
+    } else {
+        title.textContent = 'Ajouter un utilisateur';
+        document.getElementById('user-id').value = '';
+        document.getElementById('user-name').value = '';
+        document.getElementById('user-email').value = '';
+        document.getElementById('user-password').value = '';
+        document.getElementById('user-role').value = 'user';
+        passwordHint.style.display = 'none';
+        document.getElementById('user-password').required = true;
+    }
+
+    modal.classList.remove('hidden');
+}
+
+function closeUserModal() {
+    const modal = document.getElementById('user-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function editUser(userId) {
+    const user = usersData.find(u => u._id === userId);
+    if (user) {
+        openUserModal(user);
+    }
+}
+
+async function saveUser() {
+    const userId = document.getElementById('user-id').value;
+    const userData = {
+        name: document.getElementById('user-name').value,
+        email: document.getElementById('user-email').value,
+        role: document.getElementById('user-role').value
+    };
+
+    const password = document.getElementById('user-password').value;
+    if (password) {
+        userData.password = password;
+    }
+
+    try {
+        let response;
+        if (userId) {
+            // Update
+            response = await fetch(`/api/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userData)
+            });
+        } else {
+            // Create
+            if (!password) {
+                showToast('Le mot de passe est requis', 'error');
+                return;
+            }
+            response = await fetch('/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userData)
+            });
+        }
+
+        const data = await response.json();
+
+        if (data.success || data.user) {
+            showToast(userId ? 'Utilisateur modifié' : 'Utilisateur créé', 'success');
+            closeUserModal();
+            loadUsers();
+        } else {
+            showToast(data.error || 'Erreur', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving user:', error);
+        showToast('Erreur lors de l\'enregistrement', 'error');
+    }
+}
+
+async function deleteUser(userId) {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')) return;
+
+    try {
+        const response = await fetch(`/api/users/${userId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('Utilisateur supprimé', 'success');
+            loadUsers();
+        } else {
+            showToast(data.error || 'Erreur', 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        showToast('Erreur lors de la suppression', 'error');
+    }
+}
+
+async function changeMyPassword(e) {
+    e.preventDefault();
+
+    const currentPassword = document.getElementById('current-password').value;
+    const newPassword = document.getElementById('new-password').value;
+
+    try {
+        const response = await fetch('/api/me/password', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('Mot de passe modifié avec succès', 'success');
+            document.getElementById('current-password').value = '';
+            document.getElementById('new-password').value = '';
+        } else {
+            showToast(data.error || 'Erreur', 'error');
+        }
+    } catch (error) {
+        console.error('Error changing password:', error);
+        showToast('Erreur lors du changement de mot de passe', 'error');
+    }
+}
+
+// User modal event listeners
+const userModal = document.getElementById('user-modal');
+if (userModal) {
+    document.getElementById('user-modal-close')?.addEventListener('click', closeUserModal);
+    document.getElementById('btn-cancel-user')?.addEventListener('click', closeUserModal);
+    document.getElementById('btn-save-user')?.addEventListener('click', saveUser);
+    document.getElementById('btn-add-user')?.addEventListener('click', () => openUserModal());
+
+    userModal.querySelector('.modal-backdrop')?.addEventListener('click', closeUserModal);
+}
+
+// Change password form
+const changePasswordForm = document.getElementById('change-password-form');
+if (changePasswordForm) {
+    changePasswordForm.addEventListener('submit', changeMyPassword);
+}
+
+// ==========================================================================
 // Init
 // ==========================================================================
 
@@ -1233,5 +1458,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelector('[data-tab="settings"]').click();
     } else if (window.location.hash === '#history') {
         document.querySelector('[data-tab="history"]').click();
+    } else if (window.location.hash === '#users') {
+        const usersTab = document.querySelector('[data-tab="users"]');
+        if (usersTab) usersTab.click();
     }
 });

@@ -16,6 +16,7 @@ import base64
 import logging
 import traceback
 import re
+import secrets
 from logging.handlers import RotatingFileHandler
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -113,7 +114,6 @@ if not secret_key:
         secret_key = 'dev-secret-key-for-development-only'
     else:
         # Générer une clé temporaire en production si non définie (non recommandé)
-        import secrets
         secret_key = secrets.token_hex(32)
         print("ATTENTION: SECRET_KEY non défini en production! Sessions invalides après redémarrage.")
 

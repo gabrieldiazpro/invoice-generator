@@ -160,22 +160,38 @@ if not MONGO_URI:
     if not DEBUG:
         logger.warning("MONGO_URI non défini - utilisation du fallback")
 
-try:
-    mongo_client = MongoClient(
-        MONGO_URI,
-        serverSelectionTimeoutMS=5000,
-        connectTimeoutMS=5000,
-        socketTimeoutMS=10000
-    )
-    # Test connection
-    mongo_client.admin.command('ping')
-    logger.info("Connexion MongoDB établie avec succès")
-except (ConnectionFailure, ServerSelectionTimeoutError) as e:
-    logger.critical(f"Erreur connexion MongoDB: {e}")
-    mongo_client = None
-except Exception as e:
-    logger.critical(f"Erreur MongoDB (vérifiez MONGO_URI): {e}")
-    mongo_client = None
+logger.info(f"Tentative de connexion MongoDB...")
+logger.info(f"URI format: {'SRV' if '+srv' in MONGO_URI else 'standard'}")
+
+def connect_mongodb(uri, attempt=1, max_attempts=3):
+    """Tente de se connecter à MongoDB avec retry"""
+    try:
+        logger.info(f"Tentative de connexion {attempt}/{max_attempts}...")
+        client = MongoClient(
+            uri,
+            serverSelectionTimeoutMS=10000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=30000,
+            retryWrites=True,
+            w='majority'
+        )
+        # Test connection
+        client.admin.command('ping')
+        logger.info("Connexion MongoDB établie avec succès!")
+        return client
+    except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+        logger.error(f"Erreur connexion MongoDB (tentative {attempt}): {type(e).__name__}: {e}")
+        if attempt < max_attempts:
+            import time
+            time.sleep(2)
+            return connect_mongodb(uri, attempt + 1, max_attempts)
+        return None
+    except Exception as e:
+        logger.critical(f"Erreur MongoDB inattendue: {type(e).__name__}: {e}")
+        logger.critical(f"Traceback: {traceback.format_exc()}")
+        return None
+
+mongo_client = connect_mongodb(MONGO_URI)
 
 db = mongo_client['invoice_generator'] if mongo_client is not None else None
 users_collection = db['users'] if db is not None else None

@@ -10,6 +10,22 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+    <!-- Impersonation Banner (hidden by default, shown via JS) -->
+    <div id="impersonation-banner" class="impersonation-banner hidden">
+        <div class="container impersonation-content">
+            <span class="impersonation-text">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+                Vous êtes connecté en tant que <strong id="impersonated-user-name"></strong>
+            </span>
+            <button id="btn-stop-impersonate" class="btn-stop-impersonate">
+                Retourner à mon compte
+            </button>
+        </div>
+    </div>
+
     <!-- Header -->
     <header class="header">
         <div class="container header-content">
@@ -628,7 +644,9 @@ Veuillez trouver ci-joint votre facture..."></textarea>
             name: '{{ user.name }}',
             role: '{{ user.role }}',
             isAdmin: {{ 'true' if user.is_admin() else 'false' }},
-            isSuperAdmin: {{ 'true' if user.is_super_admin() else 'false' }}
+            isSuperAdmin: {{ 'true' if user.is_super_admin() else 'false' }},
+            isImpersonating: {{ 'true' if user.is_impersonating() else 'false' }},
+            impersonatedBy: '{{ user.impersonated_by or "" }}'
         };
     </script>
     <script src="/static/js/app.js"></script>

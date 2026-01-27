@@ -1588,3 +1588,91 @@ select:focus {
     border-color: var(--color-primary);
     box-shadow: 0 0 0 3px rgba(48, 38, 240, 0.1);
 }
+
+/* ==========================================================================
+   Impersonation Banner
+   ========================================================================== */
+
+.impersonation-banner {
+    background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+    padding: 10px 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1001;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.impersonation-banner.hidden {
+    display: none;
+}
+
+.impersonation-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.impersonation-text {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.impersonation-text svg {
+    flex-shrink: 0;
+}
+
+.impersonation-text strong {
+    font-weight: 600;
+}
+
+.btn-stop-impersonate {
+    background-color: white;
+    color: #d97706;
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.btn-stop-impersonate:hover {
+    background-color: #fef3c7;
+    transform: translateY(-1px);
+}
+
+/* Adjust body padding when impersonation banner is shown */
+body.impersonating {
+    padding-top: 50px;
+}
+
+body.impersonating .header {
+    top: 50px;
+}
+
+/* Impersonate button in users list */
+.btn-impersonate {
+    background-color: #fef3c7;
+    color: #d97706;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid #fcd34d;
+    transition: all 0.2s;
+}
+
+.btn-impersonate:hover {
+    background-color: #fcd34d;
+    color: #92400e;
+}

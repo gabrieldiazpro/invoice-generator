@@ -1366,6 +1366,11 @@ function renderUsers() {
                             <button class="btn-delete-user" data-id="${user._id}">Supprimer</button>
                         ` : ''}
                     ` : ''}
+                    ${window.currentUser.isSuperAdmin && user._id !== window.currentUser.id && !window.currentUser.isImpersonating ? `
+                        <button class="btn-impersonate" data-id="${user._id}" data-name="${escapeHtml(user.name || user.email)}">
+                            Accéder
+                        </button>
+                    ` : ''}
                 </div>
             </td>
         </tr>
@@ -1378,6 +1383,11 @@ function renderUsers() {
 
     usersList.querySelectorAll('.btn-delete-user').forEach(btn => {
         btn.addEventListener('click', () => deleteUser(btn.dataset.id));
+    });
+
+    // Impersonate buttons
+    usersList.querySelectorAll('.btn-impersonate').forEach(btn => {
+        btn.addEventListener('click', () => impersonateUser(btn.dataset.id, btn.dataset.name));
     });
 }
 
@@ -1562,10 +1572,84 @@ if (changePasswordForm) {
 }
 
 // ==========================================================================
+// Impersonation
+// ==========================================================================
+
+async function impersonateUser(userId, userName) {
+    if (!confirm(`Voulez-vous accéder au compte de "${userName}" ?\n\nVous pourrez revenir à votre compte à tout moment.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/users/${userId}/impersonate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`Vous êtes maintenant connecté en tant que ${data.user.email}`, 'success');
+            // Reload the page to update all user-related UI
+            window.location.reload();
+        } else {
+            showToast(data.error || 'Erreur lors de l\'impersonation', 'error');
+        }
+    } catch (error) {
+        console.error('Error impersonating user:', error);
+        showToast('Erreur lors de l\'impersonation', 'error');
+    }
+}
+
+async function stopImpersonation() {
+    try {
+        const response = await fetch('/api/stop-impersonate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('Vous êtes de retour sur votre compte', 'success');
+            // Reload the page to update all user-related UI
+            window.location.reload();
+        } else {
+            showToast(data.error || 'Erreur lors du retour au compte', 'error');
+        }
+    } catch (error) {
+        console.error('Error stopping impersonation:', error);
+        showToast('Erreur lors du retour au compte', 'error');
+    }
+}
+
+function initImpersonationBanner() {
+    // Check if user is impersonating
+    if (window.currentUser && window.currentUser.isImpersonating) {
+        const banner = document.getElementById('impersonation-banner');
+        const userName = document.getElementById('impersonated-user-name');
+        const stopBtn = document.getElementById('btn-stop-impersonate');
+
+        if (banner && userName) {
+            userName.textContent = `${window.currentUser.name || window.currentUser.email}`;
+            banner.classList.remove('hidden');
+            document.body.classList.add('impersonating');
+
+            if (stopBtn) {
+                stopBtn.addEventListener('click', stopImpersonation);
+            }
+        }
+    }
+}
+
+// ==========================================================================
 // Init
 // ==========================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize impersonation banner
+    initImpersonationBanner();
+
     // Check URL hash for initial tab
     if (window.location.hash === '#clients') {
         document.querySelector('[data-tab="clients"]').click();

@@ -23,7 +23,7 @@ from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, g
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, g, session
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.exceptions import HTTPException
@@ -543,17 +543,23 @@ os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 # ============================================================================
 
 class User(UserMixin):
-    def __init__(self, user_data):
+    def __init__(self, user_data, impersonated_by=None):
         self.id = str(user_data['_id'])
         self.email = user_data['email']
         self.name = user_data.get('name', '')
         self.role = user_data.get('role', 'user')
+        # Impersonation: ID du super admin qui impersonne cet utilisateur
+        self.impersonated_by = impersonated_by
 
     def is_admin(self):
         return self.role in ['admin', 'super_admin']
 
     def is_super_admin(self):
         return self.role == 'super_admin'
+
+    def is_impersonating(self):
+        """Retourne True si l'utilisateur actuel est impersonné par un super admin"""
+        return self.impersonated_by is not None
 
 
 @login_manager.user_loader
@@ -564,7 +570,9 @@ def load_user(user_id):
             return None
         user_data = users_collection.find_one({'_id': ObjectId(user_id)})
         if user_data:
-            return User(user_data)
+            # Vérifier si on est en mode impersonation
+            impersonated_by = session.get('impersonated_by')
+            return User(user_data, impersonated_by=impersonated_by)
     except Exception as e:
         logger.error(f"Erreur lors du chargement de l'utilisateur {user_id}: {e}")
     return None
@@ -1463,18 +1471,119 @@ def delete_user(user_id):
         return jsonify({'error': str(e)}), 500
 
 
+# =============================================================================
+# Impersonation (Super Admin seulement)
+# =============================================================================
+
+@app.route('/api/users/<user_id>/impersonate', methods=['POST'])
+@login_required
+@super_admin_required
+def impersonate_user(user_id):
+    """Permet au super admin de se connecter en tant qu'un autre utilisateur"""
+    try:
+        # Vérifier que l'utilisateur existe
+        target_user = users_collection.find_one({'_id': ObjectId(user_id)})
+        if not target_user:
+            return jsonify({'error': 'Utilisateur non trouvé'}), 404
+
+        # Ne pas permettre d'impersonner soi-même
+        if str(target_user['_id']) == current_user.id:
+            return jsonify({'error': 'Vous ne pouvez pas vous impersonner vous-même'}), 400
+
+        # Stocker l'ID du super admin original dans la session
+        original_admin_id = session.get('impersonated_by') or current_user.id
+        session['impersonated_by'] = original_admin_id
+
+        # Se connecter en tant que l'utilisateur cible
+        impersonated_user = User(target_user, impersonated_by=original_admin_id)
+        login_user(impersonated_user)
+
+        logger.info(f"Super admin {original_admin_id} impersonne l'utilisateur {target_user['email']}")
+
+        return jsonify({
+            'success': True,
+            'message': f"Vous êtes maintenant connecté en tant que {target_user['email']}",
+            'user': {
+                'id': str(target_user['_id']),
+                'email': target_user['email'],
+                'name': target_user.get('name', ''),
+                'role': target_user.get('role', 'user')
+            }
+        })
+    except Exception as e:
+        logger.error(f"Erreur impersonation: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/stop-impersonate', methods=['POST'])
+@login_required
+def stop_impersonation():
+    """Arrête l'impersonation et revient au compte super admin"""
+    try:
+        original_admin_id = session.get('impersonated_by')
+
+        if not original_admin_id:
+            return jsonify({'error': 'Vous n\'êtes pas en mode impersonation'}), 400
+
+        # Charger le super admin original
+        admin_data = users_collection.find_one({'_id': ObjectId(original_admin_id)})
+        if not admin_data:
+            # Fallback: déconnecter l'utilisateur
+            session.pop('impersonated_by', None)
+            logout_user()
+            return jsonify({'error': 'Compte administrateur non trouvé, déconnexion'}), 400
+
+        # Supprimer le flag d'impersonation de la session
+        session.pop('impersonated_by', None)
+
+        # Reconnecter le super admin
+        admin_user = User(admin_data)
+        login_user(admin_user)
+
+        logger.info(f"Super admin {admin_data['email']} a arrêté l'impersonation")
+
+        return jsonify({
+            'success': True,
+            'message': f"Vous êtes de retour sur votre compte ({admin_data['email']})",
+            'user': {
+                'id': str(admin_data['_id']),
+                'email': admin_data['email'],
+                'name': admin_data.get('name', ''),
+                'role': admin_data.get('role', 'super_admin')
+            }
+        })
+    except Exception as e:
+        logger.error(f"Erreur arrêt impersonation: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/me', methods=['GET'])
 @login_required
 def get_current_user():
     user_data = users_collection.find_one({'_id': ObjectId(current_user.id)})
-    return jsonify({'success': True, 'user': {
-        'id': current_user.id,
-        'email': current_user.email,
-        'name': current_user.name,
-        'role': current_user.role,
-        'sender_name': user_data.get('sender_name', ''),
-        'sender_email': user_data.get('sender_email', '')
-    }})
+
+    response = {
+        'success': True,
+        'user': {
+            'id': current_user.id,
+            'email': current_user.email,
+            'name': current_user.name,
+            'role': current_user.role,
+            'sender_name': user_data.get('sender_name', ''),
+            'sender_email': user_data.get('sender_email', '')
+        }
+    }
+
+    # Ajouter les informations d'impersonation si applicable
+    if current_user.is_impersonating():
+        original_admin = users_collection.find_one({'_id': ObjectId(current_user.impersonated_by)})
+        response['impersonation'] = {
+            'active': True,
+            'original_admin_id': current_user.impersonated_by,
+            'original_admin_email': original_admin['email'] if original_admin else 'Unknown'
+        }
+
+    return jsonify(response)
 
 
 @app.route('/api/me/password', methods=['PUT'])

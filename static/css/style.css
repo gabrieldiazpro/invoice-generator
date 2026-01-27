@@ -1676,3 +1676,23 @@ body.impersonating .header {
     background-color: #fcd34d;
     color: #92400e;
 }
+
+/* ==========================================================================
+   Save Button States
+   ========================================================================== */
+
+.btn-saved {
+    background-color: var(--color-gray-300) !important;
+    color: var(--color-gray-500) !important;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+
+.btn-saved::before {
+    content: '✓ ';
+}
+
+.btn-primary:disabled:not(.btn-saved) {
+    opacity: 0.7;
+    cursor: wait;
+}

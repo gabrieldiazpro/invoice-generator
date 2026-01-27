@@ -460,6 +460,131 @@ document.getElementById('btn-close-email-results').addEventListener('click', () 
 });
 
 // ==========================================================================
+// Form Change Tracking
+// ==========================================================================
+
+// Store original values for each form
+const formOriginalValues = {
+    smtp: {},
+    sender: {},
+    emailTemplates: {}
+};
+
+/**
+ * Setup form tracking to enable/disable save button based on changes
+ */
+function setupFormTracking(formId, fieldIds, buttonId, originalValuesKey) {
+    const btn = document.getElementById(buttonId);
+    if (!btn) return;
+
+    // Store original values
+    fieldIds.forEach(id => {
+        const field = document.getElementById(id);
+        if (field) {
+            formOriginalValues[originalValuesKey][id] = field.value;
+        }
+    });
+
+    // Add change listeners to all fields
+    fieldIds.forEach(id => {
+        const field = document.getElementById(id);
+        if (field) {
+            const eventType = field.tagName === 'TEXTAREA' ? 'input' : 'input';
+            field.addEventListener(eventType, () => checkFormChanges(fieldIds, buttonId, originalValuesKey));
+        }
+    });
+
+    // Initially disable the button (no changes yet)
+    markButtonAsSaved(buttonId);
+}
+
+/**
+ * Check if form has changes compared to original values
+ */
+function checkFormChanges(fieldIds, buttonId, originalValuesKey) {
+    const btn = document.getElementById(buttonId);
+    if (!btn) return;
+
+    let hasChanges = false;
+
+    fieldIds.forEach(id => {
+        const field = document.getElementById(id);
+        if (field) {
+            const originalValue = formOriginalValues[originalValuesKey][id] || '';
+            if (field.value !== originalValue) {
+                hasChanges = true;
+            }
+        }
+    });
+
+    if (hasChanges) {
+        enableSaveButton(buttonId);
+    } else {
+        markButtonAsSaved(buttonId);
+    }
+}
+
+/**
+ * Mark button as saved (disabled with checkmark)
+ */
+function markButtonAsSaved(buttonId) {
+    const btn = document.getElementById(buttonId);
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.classList.add('btn-saved');
+
+    // Set the saved text based on button type
+    const savedTexts = {
+        'btn-save-smtp-config': 'Enregistré',
+        'btn-save-sender-config': 'Enregistré',
+        'btn-save-email-config': 'Enregistré'
+    };
+    btn.textContent = savedTexts[buttonId] || 'Enregistré';
+}
+
+/**
+ * Enable save button (changes detected)
+ */
+function enableSaveButton(buttonId) {
+    const btn = document.getElementById(buttonId);
+    if (!btn) return;
+
+    btn.disabled = false;
+    btn.classList.remove('btn-saved');
+
+    // Set the active text based on button type
+    const activeTexts = {
+        'btn-save-smtp-config': 'Enregistrer SMTP',
+        'btn-save-sender-config': 'Enregistrer mon identité',
+        'btn-save-email-config': 'Enregistrer les templates'
+    };
+    btn.textContent = activeTexts[buttonId] || 'Enregistrer';
+}
+
+/**
+ * Update original values after successful save
+ */
+function updateOriginalValues(fieldIds, originalValuesKey) {
+    fieldIds.forEach(id => {
+        const field = document.getElementById(id);
+        if (field) {
+            formOriginalValues[originalValuesKey][id] = field.value;
+        }
+    });
+}
+
+// Field IDs for each form
+const smtpFieldIds = ['smtp-server', 'smtp-port', 'smtp-username', 'smtp-password'];
+const senderFieldIds = ['sender-name', 'sender-email'];
+const emailTemplateFieldIds = [
+    'email-subject', 'email-template',
+    'reminder-1-subject', 'reminder-1-template',
+    'reminder-2-subject', 'reminder-2-template',
+    'reminder-3-subject', 'reminder-3-template'
+];
+
+// ==========================================================================
 // Email Configuration
 // ==========================================================================
 
@@ -499,6 +624,15 @@ async function loadEmailConfig() {
 
         // Load user's sender identity
         await loadSenderConfig();
+
+        // Setup form tracking for SMTP (if fields exist)
+        if (document.getElementById('smtp-server')) {
+            setupFormTracking('smtp-config-form', smtpFieldIds, 'btn-save-smtp-config', 'smtp');
+        }
+
+        // Setup form tracking for email templates
+        setupFormTracking('email-templates', emailTemplateFieldIds, 'btn-save-email-config', 'emailTemplates');
+
     } catch (error) {
         showToast('Erreur lors du chargement de la configuration', 'error');
     }
@@ -513,6 +647,10 @@ async function loadSenderConfig() {
             document.getElementById('sender-name').value = data.user.sender_name || '';
             document.getElementById('sender-email').value = data.user.sender_email || '';
         }
+
+        // Setup form tracking for sender identity
+        setupFormTracking('sender-config-form', senderFieldIds, 'btn-save-sender-config', 'sender');
+
     } catch (error) {
         console.error('Error loading sender config:', error);
     }
@@ -522,6 +660,7 @@ async function loadSenderConfig() {
 document.getElementById('btn-save-email-config').addEventListener('click', async () => {
     const btn = document.getElementById('btn-save-email-config');
     btn.disabled = true;
+    btn.classList.remove('btn-saved');
     btn.textContent = 'Enregistrement...';
 
     const config = {
@@ -546,14 +685,16 @@ document.getElementById('btn-save-email-config').addEventListener('click', async
 
         if (data.success) {
             showToast('Templates enregistrés', 'success');
+            // Update original values and mark as saved
+            updateOriginalValues(emailTemplateFieldIds, 'emailTemplates');
+            markButtonAsSaved('btn-save-email-config');
         } else {
             showToast(data.error || 'Erreur lors de l\'enregistrement', 'error');
+            enableSaveButton('btn-save-email-config');
         }
     } catch (error) {
         showToast('Erreur lors de l\'enregistrement', 'error');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Enregistrer la configuration';
+        enableSaveButton('btn-save-email-config');
     }
 });
 
@@ -563,6 +704,7 @@ if (btnSaveSmtpConfig) {
     btnSaveSmtpConfig.addEventListener('click', async () => {
         const btn = btnSaveSmtpConfig;
         btn.disabled = true;
+        btn.classList.remove('btn-saved');
         btn.textContent = 'Enregistrement...';
 
         const config = {
@@ -584,15 +726,16 @@ if (btnSaveSmtpConfig) {
             if (data.success) {
                 showToast('Configuration SMTP enregistrée', 'success');
                 document.getElementById('smtp-password').value = '';
-                loadEmailConfig();
+                // Update original values and mark as saved
+                updateOriginalValues(smtpFieldIds, 'smtp');
+                markButtonAsSaved('btn-save-smtp-config');
             } else {
                 showToast(data.error || 'Erreur lors de l\'enregistrement', 'error');
+                enableSaveButton('btn-save-smtp-config');
             }
         } catch (error) {
             showToast('Erreur lors de l\'enregistrement', 'error');
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Enregistrer SMTP';
+            enableSaveButton('btn-save-smtp-config');
         }
     });
 }
@@ -603,6 +746,7 @@ if (btnSaveSenderConfig) {
     btnSaveSenderConfig.addEventListener('click', async () => {
         const btn = btnSaveSenderConfig;
         btn.disabled = true;
+        btn.classList.remove('btn-saved');
         btn.textContent = 'Enregistrement...';
 
         const senderData = {
@@ -621,14 +765,16 @@ if (btnSaveSenderConfig) {
 
             if (data.success) {
                 showToast('Identité d\'expéditeur enregistrée', 'success');
+                // Update original values and mark as saved
+                updateOriginalValues(senderFieldIds, 'sender');
+                markButtonAsSaved('btn-save-sender-config');
             } else {
                 showToast(data.error || 'Erreur lors de l\'enregistrement', 'error');
+                enableSaveButton('btn-save-sender-config');
             }
         } catch (error) {
             showToast('Erreur lors de l\'enregistrement', 'error');
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Enregistrer mon identité';
+            enableSaveButton('btn-save-sender-config');
         }
     });
 }

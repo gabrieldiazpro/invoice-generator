@@ -19,11 +19,14 @@ from flask import Flask, render_template, request, jsonify, send_file, send_from
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 from bson.objectid import ObjectId
 from invoice_generator import (
-    parse_csv, load_clients_config, save_clients_config,
-    get_client_info, InvoicePDFGenerator, generate_invoice_number, format_currency
+    parse_csv, load_clients_config as load_clients_config_file,
+    save_clients_config as save_clients_config_file,
+    get_client_info as get_client_info_original,
+    InvoicePDFGenerator, generate_invoice_number, format_currency,
+    CLIENTS_CONFIG_FILE
 )
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -37,6 +40,62 @@ MONGO_URI = os.environ.get('MONGO_URI', 'mongodb+srv://gabrieldiazpro_db_user:ga
 mongo_client = MongoClient(MONGO_URI)
 db = mongo_client['invoice_generator']
 users_collection = db['users']
+email_config_collection = db['email_config']
+invoice_history_collection = db['invoice_history']
+clients_collection = db['clients']
+
+
+def load_clients_config():
+    """Charge la configuration des clients depuis MongoDB"""
+    clients = {}
+    for client in clients_collection.find():
+        client_name = client.pop('_id')
+        clients[client_name] = client
+    if not clients:
+        # Migration: charger depuis le fichier JSON si existe
+        if os.path.exists(CLIENTS_CONFIG_FILE):
+            clients = load_clients_config_file()
+            if clients:
+                save_clients_config(clients)
+    return clients
+
+
+def save_clients_config(clients):
+    """Sauvegarde la configuration des clients dans MongoDB"""
+    for client_name, client_data in clients.items():
+        client_doc = dict(client_data)
+        client_doc['_id'] = client_name
+        clients_collection.replace_one({'_id': client_name}, client_doc, upsert=True)
+
+
+def get_client_info(shipper_name, clients_config):
+    """Récupère les informations d'un client ou crée une entrée par défaut"""
+    if shipper_name in clients_config:
+        return clients_config[shipper_name]
+
+    # Vérifier dans MongoDB
+    client = clients_collection.find_one({'_id': shipper_name})
+    if client:
+        client.pop('_id', None)
+        clients_config[shipper_name] = client
+        return client
+
+    # Créer une entrée par défaut
+    default_client = {
+        "nom": shipper_name,
+        "adresse": "Adresse à compléter",
+        "code_postal": "00000",
+        "ville": "Ville",
+        "pays": "France",
+        "email": "email@example.com",
+        "siret": "00000000000000"
+    }
+    clients_config[shipper_name] = default_client
+    # Sauvegarder dans MongoDB
+    client_doc = dict(default_client)
+    client_doc['_id'] = shipper_name
+    clients_collection.replace_one({'_id': shipper_name}, client_doc, upsert=True)
+    return default_client
 
 # Flask-Login Configuration
 login_manager = LoginManager()
@@ -452,36 +511,54 @@ def allowed_file(filename):
 
 
 def load_email_config():
-    """Charge la configuration email"""
+    """Charge la configuration email depuis MongoDB"""
+    config = email_config_collection.find_one({'_id': 'main'})
+    if config:
+        config.pop('_id', None)
+        return config
+    # Migration: charger depuis le fichier JSON si existe
     if os.path.exists(EMAIL_CONFIG_FILE):
         with open(EMAIL_CONFIG_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            config = json.load(f)
+            save_email_config(config)
+            return config
     return {}
 
 
 def save_email_config(config):
-    """Sauvegarde la configuration email"""
-    with open(EMAIL_CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
+    """Sauvegarde la configuration email dans MongoDB"""
+    config_copy = dict(config)
+    config_copy['_id'] = 'main'
+    email_config_collection.replace_one({'_id': 'main'}, config_copy, upsert=True)
 
 
 def load_invoice_history():
-    """Charge l'historique des factures"""
+    """Charge l'historique des factures depuis MongoDB"""
+    history = list(invoice_history_collection.find().sort('created_at', -1))
+    if history:
+        for h in history:
+            h['_id'] = str(h['_id']) if '_id' in h else h.get('id')
+        return history
+    # Migration: charger depuis le fichier JSON si existe
     if os.path.exists(INVOICE_HISTORY_FILE):
         with open(INVOICE_HISTORY_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            history = json.load(f)
+            if history:
+                for h in history:
+                    invoice_history_collection.insert_one(h)
+            return history
     return []
 
 
 def save_invoice_history(history):
-    """Sauvegarde l'historique des factures"""
-    with open(INVOICE_HISTORY_FILE, 'w', encoding='utf-8') as f:
-        json.dump(history, f, indent=2, ensure_ascii=False)
+    """Sauvegarde l'historique des factures dans MongoDB (remplace tout)"""
+    invoice_history_collection.delete_many({})
+    if history:
+        invoice_history_collection.insert_many(history)
 
 
 def add_to_invoice_history(invoice_data, batch_id):
-    """Ajoute une facture à l'historique"""
-    history = load_invoice_history()
+    """Ajoute une facture à l'historique dans MongoDB"""
     history_entry = {
         'id': f"{batch_id}_{invoice_data['invoice_number']}",
         'invoice_number': invoice_data['invoice_number'],
@@ -505,19 +582,20 @@ def add_to_invoice_history(invoice_data, batch_id):
         'reminder_3_sent': False,
         'reminder_3_at': None
     }
-    history.insert(0, history_entry)  # Ajouter en premier (plus récent)
-    save_invoice_history(history)
+    invoice_history_collection.insert_one(history_entry)
     return history_entry
 
 
 def update_invoice_in_history(invoice_id, updates):
-    """Met à jour une facture dans l'historique"""
-    history = load_invoice_history()
-    for i, inv in enumerate(history):
-        if inv.get('id') == invoice_id:
-            history[i].update(updates)
-            save_invoice_history(history)
-            return history[i]
+    """Met à jour une facture dans l'historique MongoDB"""
+    result = invoice_history_collection.find_one_and_update(
+        {'id': invoice_id},
+        {'$set': updates},
+        return_document=ReturnDocument.AFTER
+    )
+    if result:
+        result['_id'] = str(result['_id']) if '_id' in result else result.get('id')
+        return result
     return None
 
 
@@ -1519,9 +1597,7 @@ def get_invoice_history():
 @login_required
 def delete_from_history(invoice_id):
     """Supprime une facture de l'historique"""
-    history = load_invoice_history()
-    history = [h for h in history if h.get('id') != invoice_id]
-    save_invoice_history(history)
+    invoice_history_collection.delete_one({'id': invoice_id})
     return jsonify({'success': True})
 
 
@@ -1553,7 +1629,7 @@ def download_from_history(invoice_id):
 @login_required
 def clear_history():
     """Vide l'historique des factures"""
-    save_invoice_history([])
+    invoice_history_collection.delete_many({})
     return jsonify({'success': True})
 
 
@@ -1749,14 +1825,11 @@ def get_clients():
 @app.route('/api/clients/<client_name>', methods=['PUT'])
 @login_required
 def update_client(client_name):
-    """Met à jour les informations d'un client"""
-    clients = load_clients_config()
+    """Met à jour les informations d'un client dans MongoDB"""
     data = request.json
 
-    if client_name not in clients:
-        clients[client_name] = {}
-
-    clients[client_name].update({
+    client_data = {
+        '_id': client_name,
         'nom': data.get('nom', client_name),
         'adresse': data.get('adresse', ''),
         'code_postal': data.get('code_postal', ''),
@@ -1764,23 +1837,19 @@ def update_client(client_name):
         'pays': data.get('pays', 'France'),
         'email': data.get('email', ''),
         'siret': data.get('siret', '')
-    })
+    }
 
-    save_clients_config(clients)
+    clients_collection.replace_one({'_id': client_name}, client_data, upsert=True)
 
-    return jsonify({'success': True, 'client': clients[client_name]})
+    client_data.pop('_id')
+    return jsonify({'success': True, 'client': client_data})
 
 
 @app.route('/api/clients/<client_name>', methods=['DELETE'])
 @login_required
 def delete_client(client_name):
-    """Supprime un client"""
-    clients = load_clients_config()
-
-    if client_name in clients:
-        del clients[client_name]
-        save_clients_config(clients)
-
+    """Supprime un client de MongoDB"""
+    clients_collection.delete_one({'_id': client_name})
     return jsonify({'success': True})
 
 

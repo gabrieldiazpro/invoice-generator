@@ -99,6 +99,15 @@ def init_super_admin():
         print("Super admin créé: gabriel@peoplespost.fr / admin123")
 
 
+def get_user_sender_info():
+    """Récupère le nom et email d'expéditeur de l'utilisateur courant"""
+    if current_user.is_authenticated:
+        user_data = users_collection.find_one({'_id': ObjectId(current_user.id)})
+        if user_data:
+            return user_data.get('sender_name', ''), user_data.get('sender_email', '')
+    return '', ''
+
+
 init_super_admin()
 
 ALLOWED_EXTENSIONS = {'csv'}
@@ -334,8 +343,16 @@ def format_email_body(template, invoice_data):
     )
 
 
-def send_invoice_email(invoice_data, email_config, batch_folder):
-    """Envoie un email HTML stylisé avec la facture en pièce jointe"""
+def send_invoice_email(invoice_data, email_config, batch_folder, sender_name=None, sender_email=None):
+    """Envoie un email HTML stylisé avec la facture en pièce jointe
+
+    Args:
+        invoice_data: Les données de la facture
+        email_config: La configuration SMTP et templates
+        batch_folder: Le dossier du batch contenant les PDFs
+        sender_name: Nom de l'expéditeur (optionnel, priorité sur email_config)
+        sender_email: Email de l'expéditeur (optionnel, priorité sur email_config)
+    """
     recipient_email = invoice_data.get('client_email', '')
 
     if not recipient_email:
@@ -344,10 +361,14 @@ def send_invoice_email(invoice_data, email_config, batch_folder):
     if not email_config.get('smtp_username') or not email_config.get('smtp_password'):
         return {'success': False, 'error': 'Configuration SMTP incomplète'}
 
+    # Utiliser l'identité de l'utilisateur si fournie, sinon celle de la config globale
+    actual_sender_name = sender_name or email_config.get('sender_name', 'Peoples Post')
+    actual_sender_email = sender_email or email_config.get('sender_email', '')
+
     try:
         # Créer le message multipart/related pour le HTML avec images inline
         msg = MIMEMultipart('related')
-        msg['From'] = f"{email_config.get('sender_name', 'Peoples Post')} <{email_config.get('sender_email', '')}>"
+        msg['From'] = f"{actual_sender_name} <{actual_sender_email}>"
         msg['To'] = recipient_email
         msg['Subject'] = email_config.get('email_subject', 'Votre facture Peoples Post').format(
             invoice_number=invoice_data.get('invoice_number', ''),
@@ -413,11 +434,16 @@ def send_invoice_email(invoice_data, email_config, batch_folder):
         return {'success': False, 'error': f'Erreur: {str(e)}'}
 
 
-def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=1):
+def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=1, sender_name=None, sender_email=None):
     """Envoie un email HTML stylisé de relance avec la facture en pièce jointe
 
     Args:
+        invoice_data: Les données de la facture
+        email_config: La configuration SMTP et templates
+        batch_folder: Le dossier du batch contenant les PDFs
         reminder_type: 1 = première relance (48h), 2 = avertissement (7j), 3 = dernier avis
+        sender_name: Nom de l'expéditeur (optionnel, priorité sur email_config)
+        sender_email: Email de l'expéditeur (optionnel, priorité sur email_config)
     """
     recipient_email = invoice_data.get('client_email', '')
 
@@ -427,10 +453,14 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
     if not email_config.get('smtp_username') or not email_config.get('smtp_password'):
         return {'success': False, 'error': 'Configuration SMTP incomplète'}
 
+    # Utiliser l'identité de l'utilisateur si fournie, sinon celle de la config globale
+    actual_sender_name = sender_name or email_config.get('sender_name', 'Peoples Post')
+    actual_sender_email = sender_email or email_config.get('sender_email', '')
+
     try:
         # Créer le message multipart/related pour le HTML avec images inline
         msg = MIMEMultipart('related')
-        msg['From'] = f"{email_config.get('sender_name', 'Peoples Post')} <{email_config.get('sender_email', '')}>"
+        msg['From'] = f"{actual_sender_name} <{actual_sender_email}>"
         msg['To'] = recipient_email
 
         # Utiliser le template de relance approprié
@@ -617,7 +647,15 @@ def delete_user(user_id):
 @app.route('/api/me', methods=['GET'])
 @login_required
 def get_current_user():
-    return jsonify({'success': True, 'user': {'id': current_user.id, 'email': current_user.email, 'name': current_user.name, 'role': current_user.role}})
+    user_data = users_collection.find_one({'_id': ObjectId(current_user.id)})
+    return jsonify({'success': True, 'user': {
+        'id': current_user.id,
+        'email': current_user.email,
+        'name': current_user.name,
+        'role': current_user.role,
+        'sender_name': user_data.get('sender_name', ''),
+        'sender_email': user_data.get('sender_email', '')
+    }})
 
 
 @app.route('/api/me/password', methods=['PUT'])
@@ -632,6 +670,21 @@ def change_my_password():
     if not check_password_hash(user_data['password'], current_password):
         return jsonify({'error': 'Mot de passe actuel incorrect'}), 401
     users_collection.update_one({'_id': ObjectId(current_user.id)}, {'$set': {'password': generate_password_hash(new_password)}})
+    return jsonify({'success': True})
+
+
+@app.route('/api/me/sender', methods=['PUT'])
+@login_required
+def update_my_sender():
+    """Met à jour le nom et email d'expéditeur de l'utilisateur"""
+    data = request.get_json()
+    sender_name = data.get('sender_name', '')
+    sender_email = data.get('sender_email', '')
+
+    users_collection.update_one(
+        {'_id': ObjectId(current_user.id)},
+        {'$set': {'sender_name': sender_name, 'sender_email': sender_email}}
+    )
     return jsonify({'success': True})
 
 
@@ -928,8 +981,11 @@ def send_single_email(batch_id, invoice_number):
     # Charger la config email
     email_config = load_email_config()
 
+    # Récupérer l'identité d'expéditeur de l'utilisateur
+    sender_name, sender_email = get_user_sender_info()
+
     # Envoyer l'email
-    result = send_invoice_email(invoice_data, email_config, batch_folder)
+    result = send_invoice_email(invoice_data, email_config, batch_folder, sender_name, sender_email)
 
     if result['success']:
         # Marquer comme envoyé
@@ -960,6 +1016,9 @@ def send_all_emails(batch_id):
 
     # Charger la config email
     email_config = load_email_config()
+
+    # Récupérer l'identité d'expéditeur de l'utilisateur
+    sender_name, sender_email = get_user_sender_info()
 
     results = {
         'total': 0,
@@ -993,7 +1052,7 @@ def send_all_emails(batch_id):
             continue
 
         # Envoyer l'email
-        result = send_invoice_email(invoice_data, email_config, batch_folder)
+        result = send_invoice_email(invoice_data, email_config, batch_folder, sender_name, sender_email)
 
         if result['success']:
             results['sent'] += 1
@@ -1338,6 +1397,9 @@ def send_single_reminder(invoice_id, reminder_type):
     # Charger config email
     email_config = load_email_config()
 
+    # Récupérer l'identité d'expéditeur de l'utilisateur
+    sender_name, sender_email = get_user_sender_info()
+
     # Préparer les données
     invoice_data = {
         **invoice,
@@ -1348,7 +1410,7 @@ def send_single_reminder(invoice_id, reminder_type):
     batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{invoice.get('batch_id')}")
 
     # Envoyer l'email de relance
-    result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type)
+    result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type, sender_name, sender_email)
 
     if result['success']:
         # Mettre à jour l'historique
@@ -1374,6 +1436,9 @@ def send_all_reminders(reminder_type):
 
     history = load_invoice_history()
     email_config = load_email_config()
+
+    # Récupérer l'identité d'expéditeur de l'utilisateur
+    sender_name, sender_email = get_user_sender_info()
 
     reminder_sent_key = f'reminder_{reminder_type}_sent'
     reminder_at_key = f'reminder_{reminder_type}_at'
@@ -1435,7 +1500,7 @@ def send_all_reminders(reminder_type):
         batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{invoice.get('batch_id')}")
 
         # Envoyer la relance
-        result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type)
+        result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type, sender_name, sender_email)
 
         if result['success']:
             results['sent'] += 1

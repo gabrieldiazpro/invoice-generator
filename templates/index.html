@@ -257,7 +257,7 @@
                         <h2>Configuration SMTP</h2>
                     </div>
                     <div class="card-body">
-                        <form id="email-config-form">
+                        <form id="smtp-config-form">
                             <div class="form-grid">
                                 <div class="form-group">
                                     <label for="smtp-server">Serveur SMTP</label>
@@ -279,20 +279,40 @@
                                     <small class="form-hint" id="password-hint"></small>
                                 </div>
                             </div>
-                            <div class="form-grid">
-                                <div class="form-group">
-                                    <label for="sender-name">Nom de l'expéditeur</label>
-                                    <input type="text" id="sender-name" placeholder="Peoples Post">
-                                </div>
-                                <div class="form-group">
-                                    <label for="sender-email">Email de l'expéditeur</label>
-                                    <input type="email" id="sender-email" placeholder="facturation@peoplespost.fr">
-                                </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-primary" id="btn-save-smtp-config">
+                                    Enregistrer SMTP
+                                </button>
                             </div>
                         </form>
                     </div>
                 </div>
                 {% endif %}
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Mon identité d'expéditeur</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="sender-config-form">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="sender-name">Nom de l'expéditeur</label>
+                                    <input type="text" id="sender-name" placeholder="Votre nom">
+                                </div>
+                                <div class="form-group">
+                                    <label for="sender-email">Email de l'expéditeur</label>
+                                    <input type="email" id="sender-email" placeholder="votre@email.com">
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-primary" id="btn-save-sender-config">
+                                    Enregistrer mon identité
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
 
                 <div class="card">
                     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">

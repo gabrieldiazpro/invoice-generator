@@ -468,11 +468,24 @@ async function loadEmailConfig() {
         const response = await fetch('/api/email/config');
         const config = await response.json();
 
-        document.getElementById('smtp-server').value = config.smtp_server || '';
-        document.getElementById('smtp-port').value = config.smtp_port || '';
-        document.getElementById('smtp-username').value = config.smtp_username || '';
-        document.getElementById('sender-name').value = config.sender_name || '';
-        document.getElementById('sender-email').value = config.sender_email || '';
+        // SMTP config (super admin only - fields might not exist)
+        const smtpServer = document.getElementById('smtp-server');
+        const smtpPort = document.getElementById('smtp-port');
+        const smtpUsername = document.getElementById('smtp-username');
+        const passwordHint = document.getElementById('password-hint');
+
+        if (smtpServer) smtpServer.value = config.smtp_server || '';
+        if (smtpPort) smtpPort.value = config.smtp_port || '';
+        if (smtpUsername) smtpUsername.value = config.smtp_username || '';
+        if (passwordHint) {
+            if (config.smtp_password_set) {
+                passwordHint.textContent = '✓ Mot de passe configuré (laisser vide pour conserver)';
+            } else {
+                passwordHint.textContent = '⚠ Mot de passe non configuré';
+            }
+        }
+
+        // Email templates (shared config)
         document.getElementById('email-subject').value = config.email_subject || '';
         document.getElementById('email-template').value = config.email_template || '';
 
@@ -484,29 +497,34 @@ async function loadEmailConfig() {
         document.getElementById('reminder-3-subject').value = config.reminder_3_subject || '';
         document.getElementById('reminder-3-template').value = config.reminder_3_template || '';
 
-        // Password hint
-        if (config.smtp_password_set) {
-            document.getElementById('password-hint').textContent = '✓ Mot de passe configuré (laisser vide pour conserver)';
-        } else {
-            document.getElementById('password-hint').textContent = '⚠ Mot de passe non configuré';
-        }
+        // Load user's sender identity
+        await loadSenderConfig();
     } catch (error) {
         showToast('Erreur lors du chargement de la configuration', 'error');
     }
 }
 
+async function loadSenderConfig() {
+    try {
+        const response = await fetch('/api/me');
+        const data = await response.json();
+
+        if (data.success && data.user) {
+            document.getElementById('sender-name').value = data.user.sender_name || '';
+            document.getElementById('sender-email').value = data.user.sender_email || '';
+        }
+    } catch (error) {
+        console.error('Error loading sender config:', error);
+    }
+}
+
+// Save email templates (available to all users)
 document.getElementById('btn-save-email-config').addEventListener('click', async () => {
     const btn = document.getElementById('btn-save-email-config');
     btn.disabled = true;
     btn.textContent = 'Enregistrement...';
 
     const config = {
-        smtp_server: document.getElementById('smtp-server').value,
-        smtp_port: parseInt(document.getElementById('smtp-port').value) || 587,
-        smtp_username: document.getElementById('smtp-username').value,
-        smtp_password: document.getElementById('smtp-password').value,
-        sender_name: document.getElementById('sender-name').value,
-        sender_email: document.getElementById('sender-email').value,
         email_subject: document.getElementById('email-subject').value,
         email_template: document.getElementById('email-template').value,
         reminder_1_subject: document.getElementById('reminder-1-subject').value,
@@ -527,11 +545,9 @@ document.getElementById('btn-save-email-config').addEventListener('click', async
         const data = await response.json();
 
         if (data.success) {
-            showToast('Configuration enregistrée', 'success');
-            document.getElementById('smtp-password').value = '';
-            loadEmailConfig();
+            showToast('Templates enregistrés', 'success');
         } else {
-            showToast('Erreur lors de l\'enregistrement', 'error');
+            showToast(data.error || 'Erreur lors de l\'enregistrement', 'error');
         }
     } catch (error) {
         showToast('Erreur lors de l\'enregistrement', 'error');
@@ -540,6 +556,82 @@ document.getElementById('btn-save-email-config').addEventListener('click', async
         btn.textContent = 'Enregistrer la configuration';
     }
 });
+
+// Save SMTP config (super admin only)
+const btnSaveSmtpConfig = document.getElementById('btn-save-smtp-config');
+if (btnSaveSmtpConfig) {
+    btnSaveSmtpConfig.addEventListener('click', async () => {
+        const btn = btnSaveSmtpConfig;
+        btn.disabled = true;
+        btn.textContent = 'Enregistrement...';
+
+        const config = {
+            smtp_server: document.getElementById('smtp-server').value,
+            smtp_port: parseInt(document.getElementById('smtp-port').value) || 587,
+            smtp_username: document.getElementById('smtp-username').value,
+            smtp_password: document.getElementById('smtp-password').value
+        };
+
+        try {
+            const response = await fetch('/api/email/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                showToast('Configuration SMTP enregistrée', 'success');
+                document.getElementById('smtp-password').value = '';
+                loadEmailConfig();
+            } else {
+                showToast(data.error || 'Erreur lors de l\'enregistrement', 'error');
+            }
+        } catch (error) {
+            showToast('Erreur lors de l\'enregistrement', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Enregistrer SMTP';
+        }
+    });
+}
+
+// Save sender identity (per-user)
+const btnSaveSenderConfig = document.getElementById('btn-save-sender-config');
+if (btnSaveSenderConfig) {
+    btnSaveSenderConfig.addEventListener('click', async () => {
+        const btn = btnSaveSenderConfig;
+        btn.disabled = true;
+        btn.textContent = 'Enregistrement...';
+
+        const senderData = {
+            sender_name: document.getElementById('sender-name').value,
+            sender_email: document.getElementById('sender-email').value
+        };
+
+        try {
+            const response = await fetch('/api/me/sender', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(senderData)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                showToast('Identité d\'expéditeur enregistrée', 'success');
+            } else {
+                showToast(data.error || 'Erreur lors de l\'enregistrement', 'error');
+            }
+        } catch (error) {
+            showToast('Erreur lors de l\'enregistrement', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Enregistrer mon identité';
+        }
+    });
+}
 
 // ==========================================================================
 // Clients Management

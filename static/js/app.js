@@ -1385,6 +1385,7 @@ function openUserModal(user = null) {
     const modal = document.getElementById('user-modal');
     const title = document.getElementById('user-modal-title');
     const passwordHint = document.getElementById('password-hint-user');
+    const welcomeEmailGroup = document.getElementById('welcome-email-group');
 
     if (user) {
         title.textContent = 'Modifier l\'utilisateur';
@@ -1395,6 +1396,7 @@ function openUserModal(user = null) {
         document.getElementById('user-role').value = user.role;
         passwordHint.style.display = 'block';
         document.getElementById('user-password').required = false;
+        if (welcomeEmailGroup) welcomeEmailGroup.style.display = 'none';
     } else {
         title.textContent = 'Ajouter un utilisateur';
         document.getElementById('user-id').value = '';
@@ -1404,6 +1406,10 @@ function openUserModal(user = null) {
         document.getElementById('user-role').value = 'user';
         passwordHint.style.display = 'none';
         document.getElementById('user-password').required = true;
+        if (welcomeEmailGroup) {
+            welcomeEmailGroup.style.display = 'block';
+            document.getElementById('user-send-welcome').checked = true;
+        }
     }
 
     modal.classList.remove('hidden');
@@ -1434,6 +1440,12 @@ async function saveUser() {
         userData.password = password;
     }
 
+    // Pour les nouveaux utilisateurs, inclure l'option d'email de bienvenue
+    const sendWelcomeCheckbox = document.getElementById('user-send-welcome');
+    if (!userId && sendWelcomeCheckbox) {
+        userData.send_welcome_email = sendWelcomeCheckbox.checked;
+    }
+
     try {
         let response;
         if (userId) {
@@ -1459,7 +1471,18 @@ async function saveUser() {
         const data = await response.json();
 
         if (data.success || data.user) {
-            showToast(userId ? 'Utilisateur modifié' : 'Utilisateur créé', 'success');
+            let message = userId ? 'Utilisateur modifié' : 'Utilisateur créé';
+
+            // Si c'est une création, vérifier si l'email de bienvenue a été envoyé
+            if (!userId && data.welcome_email_sent !== undefined) {
+                if (data.welcome_email_sent) {
+                    message += ' - Email de bienvenue envoyé';
+                } else {
+                    showToast('Attention: Email de bienvenue non envoyé - ' + (data.welcome_email_error || 'Erreur'), 'warning');
+                }
+            }
+
+            showToast(message, 'success');
             closeUserModal();
             loadUsers();
         } else {

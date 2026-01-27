@@ -118,6 +118,197 @@ LOGO_PATH = os.path.join(os.path.dirname(__file__), 'logo.png')
 LOGO_EMAIL_PATH = os.path.join(os.path.dirname(__file__), 'logo_email.png')
 
 
+def create_welcome_email_html(user_name, user_email, temp_password):
+    """Crée un email HTML de bienvenue pour les nouveaux utilisateurs"""
+
+    html = f'''<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f0f2f5;">
+        <tr>
+            <td style="padding: 40px 20px;">
+                <!-- Container principal -->
+                <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+
+                    <!-- Header avec logo -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #3026f0 0%, #1a1aad 100%); padding: 30px 40px; text-align: center; border-radius: 16px 16px 0 0;">
+                            <img src="cid:logo" alt="Peoples Post" style="height: 90px; margin: 0 auto 12px auto; display: block;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">Bienvenue !</h1>
+                        </td>
+                    </tr>
+
+                    <!-- Carte principale -->
+                    <tr>
+                        <td style="background-color: #ffffff; padding: 0; border-radius: 0 0 16px 16px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);">
+
+                            <!-- Message de bienvenue -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td style="padding: 40px;">
+                                        <p style="color: #1a1a2e; font-size: 18px; font-weight: 600; margin: 0 0 20px 0;">
+                                            Bonjour {user_name or 'et bienvenue'} !
+                                        </p>
+                                        <p style="color: #4a4a5a; font-size: 15px; line-height: 1.8; margin: 0 0 25px 0;">
+                                            Votre compte a été créé sur le <strong>Générateur de Factures Peoples Post</strong>.
+                                            Vous pouvez maintenant vous connecter et commencer à générer vos factures.
+                                        </p>
+
+                                        <!-- Encadré identifiants -->
+                                        <div style="background-color: #f8f9fb; border-radius: 12px; padding: 25px; margin: 25px 0; border-left: 4px solid #3026f0;">
+                                            <p style="color: #1a1a2e; font-size: 14px; font-weight: 600; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                Vos identifiants de connexion
+                                            </p>
+                                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                                <tr>
+                                                    <td style="padding: 8px 0;">
+                                                        <span style="color: #8b8e94; font-size: 13px;">Email :</span><br>
+                                                        <span style="color: #1a1a2e; font-size: 16px; font-weight: 600;">{user_email}</span>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td style="padding: 8px 0;">
+                                                        <span style="color: #8b8e94; font-size: 13px;">Mot de passe temporaire :</span><br>
+                                                        <span style="color: #3026f0; font-size: 16px; font-weight: 600; font-family: monospace; background-color: #eef0ff; padding: 4px 10px; border-radius: 4px;">{temp_password}</span>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </div>
+
+                                        <p style="color: #ef4444; font-size: 14px; line-height: 1.6; margin: 0 0 25px 0; padding: 12px; background-color: #fef2f2; border-radius: 8px;">
+                                            <strong>Important :</strong> Pour des raisons de sécurité, nous vous recommandons de changer votre mot de passe dès votre première connexion.
+                                        </p>
+
+                                        <!-- Bouton connexion -->
+                                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td style="text-align: center; padding: 10px 0;">
+                                                    <a href="https://pp-invoces-generator.up.railway.app/login" style="display: inline-block; background-color: #3026f0; color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 50px; font-weight: 600; font-size: 15px; box-shadow: 0 4px 15px rgba(48, 38, 240, 0.3);">
+                                                        Se connecter
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Footer -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td style="background-color: #f8f9fb; padding: 30px 40px; border-radius: 0 0 16px 16px; border-top: 1px solid #eef0f2;">
+                                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                                <td style="text-align: center;">
+                                                    <p style="color: #1a1a2e; font-size: 14px; font-weight: 700; margin: 0 0 8px 0;">
+                                                        Peoples Post SAS
+                                                    </p>
+                                                    <p style="color: #8b8e94; font-size: 13px; margin: 0; line-height: 1.7;">
+                                                        22 rue Emeriau, 75015 Paris<br>
+                                                        <a href="mailto:victor.estines@peoplespost.fr" style="color: #3026f0; text-decoration: none;">victor.estines@peoplespost.fr</a>
+                                                    </p>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Mention légale -->
+                    <tr>
+                        <td style="padding: 25px 20px; text-align: center;">
+                            <p style="color: #a0a3a8; font-size: 11px; margin: 0; line-height: 1.6;">
+                                Ce message et ses pièces jointes sont confidentiels et destinés exclusivement au destinataire.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>'''
+
+    return html
+
+
+def send_welcome_email(user_email, user_name, temp_password):
+    """Envoie un email de bienvenue au nouvel utilisateur"""
+    email_config = load_email_config()
+
+    if not email_config.get('smtp_username') or not email_config.get('smtp_password'):
+        return {'success': False, 'error': 'Configuration SMTP incomplète'}
+
+    try:
+        # Créer le message multipart/related pour le HTML avec images inline
+        msg = MIMEMultipart('related')
+        msg['From'] = f"Peoples Post <{email_config.get('smtp_username', '')}>"
+        msg['To'] = user_email
+        msg['Subject'] = "Bienvenue sur le Générateur de Factures Peoples Post"
+
+        # Créer la partie alternative (HTML + texte)
+        msg_alternative = MIMEMultipart('alternative')
+        msg.attach(msg_alternative)
+
+        # Corps de l'email en texte brut (fallback)
+        body_text = f"""Bonjour {user_name or 'et bienvenue'} !
+
+Votre compte a été créé sur le Générateur de Factures Peoples Post.
+
+Vos identifiants de connexion :
+- Email : {user_email}
+- Mot de passe temporaire : {temp_password}
+
+Important : Pour des raisons de sécurité, nous vous recommandons de changer votre mot de passe dès votre première connexion.
+
+Connectez-vous sur : https://pp-invoces-generator.up.railway.app/login
+
+Cordialement,
+L'équipe Peoples Post
+"""
+        msg_alternative.attach(MIMEText(body_text, 'plain', 'utf-8'))
+
+        # Corps de l'email en HTML
+        body_html = create_welcome_email_html(user_name, user_email, temp_password)
+        msg_alternative.attach(MIMEText(body_html, 'html', 'utf-8'))
+
+        # Ajouter le logo comme image intégrée
+        if os.path.exists(LOGO_EMAIL_PATH):
+            with open(LOGO_EMAIL_PATH, 'rb') as f:
+                logo = MIMEImage(f.read())
+                logo.add_header('Content-ID', '<logo>')
+                logo.add_header('Content-Disposition', 'inline', filename='logo.png')
+                msg.attach(logo)
+
+        # Connexion SMTP et envoi
+        server = smtplib.SMTP(
+            email_config.get('smtp_server', 'smtp.gmail.com'),
+            email_config.get('smtp_port', 587)
+        )
+        server.starttls()
+        server.login(
+            email_config.get('smtp_username', ''),
+            email_config.get('smtp_password', '')
+        )
+        server.send_message(msg)
+        server.quit()
+
+        return {'success': True}
+
+    except smtplib.SMTPAuthenticationError:
+        return {'success': False, 'error': 'Échec d\'authentification SMTP'}
+    except smtplib.SMTPException as e:
+        return {'success': False, 'error': f'Erreur SMTP: {str(e)}'}
+    except Exception as e:
+        return {'success': False, 'error': f'Erreur: {str(e)}'}
+
+
 def create_html_email(body_text, invoice_data, email_type='invoice'):
     """Crée un email HTML stylisé avec le branding Peoples Post
 
@@ -584,17 +775,36 @@ def create_user():
     password = data.get('password', '')
     name = data.get('name', '')
     role = data.get('role', 'user')
+    send_welcome = data.get('send_welcome_email', True)  # Envoyer email par défaut
+
     if not email or not password:
         return jsonify({'error': 'Email et mot de passe requis'}), 400
     if users_collection.find_one({'email': email}):
         return jsonify({'error': 'Cet email existe déjà'}), 400
     if role in ['admin', 'super_admin'] and not current_user.is_super_admin():
         return jsonify({'error': 'Seul le super admin peut créer des administrateurs'}), 403
+
+    # Sauvegarder le mot de passe en clair pour l'email avant le hash
+    temp_password = password
+
     result = users_collection.insert_one({
         'email': email, 'password': generate_password_hash(password),
         'name': name, 'role': role, 'created_at': datetime.now()
     })
-    return jsonify({'success': True, 'user': {'_id': str(result.inserted_id), 'email': email, 'name': name, 'role': role}})
+
+    response_data = {
+        'success': True,
+        'user': {'_id': str(result.inserted_id), 'email': email, 'name': name, 'role': role}
+    }
+
+    # Envoyer l'email de bienvenue
+    if send_welcome:
+        email_result = send_welcome_email(email, name, temp_password)
+        response_data['welcome_email_sent'] = email_result.get('success', False)
+        if not email_result.get('success'):
+            response_data['welcome_email_error'] = email_result.get('error', 'Erreur inconnue')
+
+    return jsonify(response_data)
 
 
 @app.route('/api/users/<user_id>', methods=['PUT'])

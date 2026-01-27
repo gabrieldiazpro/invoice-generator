@@ -1414,15 +1414,24 @@ def create_user():
         'user': {'_id': str(result.inserted_id), 'email': email, 'name': name, 'role': role}
     }
 
-    # Envoyer l'email de bienvenue
+    # Envoyer l'email de bienvenue en arrière-plan pour éviter les timeouts
     if send_welcome:
-        email_result = send_welcome_email(email, name, temp_password)
-        response_data['welcome_email_sent'] = email_result.get('success', False)
-        if email_result.get('success'):
-            logger.info(f"Email de bienvenue envoyé à {email}")
-        else:
-            response_data['welcome_email_error'] = email_result.get('error', 'Erreur inconnue')
-            logger.warning(f"Échec envoi email bienvenue à {email}: {email_result.get('error')}")
+        import threading
+        def send_email_background():
+            try:
+                email_result = send_welcome_email(email, name, temp_password)
+                if email_result.get('success'):
+                    logger.info(f"Email de bienvenue envoyé à {email}")
+                else:
+                    logger.warning(f"Échec envoi email bienvenue à {email}: {email_result.get('error')}")
+            except Exception as e:
+                logger.error(f"Erreur envoi email bienvenue à {email}: {e}")
+
+        # Lancer l'envoi en thread séparé
+        email_thread = threading.Thread(target=send_email_background)
+        email_thread.daemon = True
+        email_thread.start()
+        response_data['welcome_email_sent'] = 'pending'  # Email en cours d'envoi
 
     return jsonify(response_data)
 

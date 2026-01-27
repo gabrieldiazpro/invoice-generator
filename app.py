@@ -1205,7 +1205,17 @@ def login():
             return render_template('login.html', error='Email et mot de passe requis')
 
         # Vérification
-        user_data = users_collection.find_one({'email': email}) if users_collection else None
+        if users_collection is None:
+            logger.error("users_collection est None - pas de connexion DB")
+            return render_template('login.html', error='Service temporairement indisponible')
+
+        user_data = users_collection.find_one({'email': email})
+        logger.info(f"User lookup for {email}: {'found' if user_data else 'not found'}")
+
+        if user_data:
+            logger.info(f"Hash method: {user_data['password'][:20]}")
+            pwd_ok = check_password_hash(user_data['password'], password)
+            logger.info(f"Password check: {pwd_ok}")
 
         if user_data and check_password_hash(user_data['password'], password):
             user = User(user_data)

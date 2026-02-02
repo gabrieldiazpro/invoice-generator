@@ -664,7 +664,7 @@ def create_welcome_email_html(user_name, user_email, temp_password):
                     <!-- Header avec logo -->
                     <tr>
                         <td style="background: linear-gradient(135deg, #3026f0 0%, #1a1aad 100%); padding: 30px 40px; text-align: center; border-radius: 16px 16px 0 0;">
-                            <img src="cid:logo" alt="Peoples Post" style="height: 90px; margin: 0 auto 12px auto; display: block;">
+                            <img src="https://pp-invoces-generator.up.railway.app/static/logo.png" alt="Peoples Post" style="height: 90px; margin: 0 auto 12px auto; display: block;">
                             <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">Bienvenue !</h1>
                         </td>
                     </tr>
@@ -910,7 +910,7 @@ def create_html_email(body_text, invoice_data, email_type='invoice'):
                     <!-- Header avec logo -->
                     <tr>
                         <td style="background: linear-gradient(135deg, {header_color} 0%, {'#1a1aad' if email_type == 'invoice' else header_color} 100%); padding: 30px 40px; text-align: center; border-radius: 16px 16px 0 0;">
-                            <img src="cid:logo" alt="Peoples Post" style="height: 90px; margin: 0 auto 12px auto; display: block;">
+                            <img src="https://pp-invoces-generator.up.railway.app/static/logo.png" alt="Peoples Post" style="height: 90px; margin: 0 auto 12px auto; display: block;">
                             <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">{header_title}</h1>
                         </td>
                     </tr>

@@ -1763,7 +1763,6 @@ def generate_invoices():
 
         # Générer les factures
         generator = InvoicePDFGenerator(output_dir=batch_folder)
-        year = datetime.now().year
         invoice_num = int(start_number)
 
         generated = []
@@ -1774,7 +1773,7 @@ def generate_invoices():
                 continue
 
             client_info = get_client_info(shipper_name, clients_config)
-            invoice_number = generate_invoice_number(prefix, year, invoice_num)
+            invoice_number = generate_invoice_number(prefix, sequence=invoice_num)
 
             # Extraire la période depuis les données
             start_date = rows[0].get('Invoice Staring date', '') if rows else ''

@@ -1892,6 +1892,70 @@ def update_email_config():
     return jsonify({'success': True, 'config': safe_config})
 
 
+@app.route('/api/email/test', methods=['POST'])
+@login_required
+@super_admin_required
+def test_email():
+    """Envoie un email de test pour vérifier la configuration SMTP"""
+    data = request.get_json() or {}
+    test_email_addr = data.get('email', current_user.email)
+
+    email_config = load_email_config()
+
+    if not email_config.get('smtp_username') or not email_config.get('smtp_password'):
+        return jsonify({'success': False, 'error': 'Configuration SMTP incomplète'}), 400
+
+    try:
+        # Créer un email simple de test
+        msg = MIMEMultipart()
+        msg['From'] = f"Peoples Post <{email_config.get('smtp_username', '')}>"
+        msg['To'] = test_email_addr
+        msg['Subject'] = "Test - Configuration Email Peoples Post"
+
+        body = f"""Bonjour,
+
+Ceci est un email de test envoyé depuis le Générateur de Factures Peoples Post.
+
+Si vous recevez cet email, la configuration SMTP est correcte.
+
+Configuration utilisée:
+- Serveur: {email_config.get('smtp_server')}
+- Port: {email_config.get('smtp_port')}
+- Utilisateur: {email_config.get('smtp_username')}
+
+Cordialement,
+L'équipe Peoples Post
+"""
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+
+        # Connexion SMTP
+        server = smtplib.SMTP(
+            email_config.get('smtp_server', 'smtp.gmail.com'),
+            email_config.get('smtp_port', 587),
+            timeout=30
+        )
+        server.starttls()
+        server.login(
+            email_config.get('smtp_username', ''),
+            email_config.get('smtp_password', '')
+        )
+        server.send_message(msg)
+        server.quit()
+
+        logger.info(f"Email de test envoyé à {test_email_addr}")
+        return jsonify({'success': True, 'message': f'Email de test envoyé à {test_email_addr}'})
+
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"Erreur auth SMTP: {e}")
+        return jsonify({'success': False, 'error': 'Échec d\'authentification SMTP - vérifiez les identifiants'}), 400
+    except smtplib.SMTPException as e:
+        logger.error(f"Erreur SMTP: {e}")
+        return jsonify({'success': False, 'error': f'Erreur SMTP: {str(e)}'}), 400
+    except Exception as e:
+        logger.error(f"Erreur test email: {e}")
+        return jsonify({'success': False, 'error': f'Erreur: {str(e)}'}), 500
+
+
 @app.route('/api/email/send/<batch_id>/<invoice_number>', methods=['POST'])
 @optional_limit(EMAIL_LIMIT)
 @login_required

@@ -17,6 +17,8 @@ import logging
 import traceback
 import re
 import secrets
+import urllib.request
+import urllib.error
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -761,6 +763,66 @@ def create_welcome_email_html(user_name, user_email, temp_password):
 </html>'''
 
     return html
+
+
+def send_email_via_api(to_email, to_name, subject, html_content, text_content=None, attachment=None, attachment_name=None):
+    """Envoie un email via l'API HTTP de Brevo (contourne les restrictions SMTP de Railway)"""
+    email_config = load_email_config()
+
+    # Récupérer la clé API (utilise smtp_password comme API key)
+    api_key = email_config.get('smtp_password', '')
+    if not api_key:
+        return {'success': False, 'error': 'Clé API Brevo non configurée'}
+
+    # Préparer les données pour l'API Brevo
+    sender_email = email_config.get('sender_email') or email_config.get('smtp_username', '')
+    sender_name = email_config.get('sender_name', 'Peoples Post')
+
+    payload = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": to_email, "name": to_name or to_email}],
+        "subject": subject,
+        "htmlContent": html_content
+    }
+
+    if text_content:
+        payload["textContent"] = text_content
+
+    # Ajouter la pièce jointe si présente
+    if attachment and attachment_name:
+        payload["attachment"] = [{
+            "name": attachment_name,
+            "content": base64.b64encode(attachment).decode('utf-8')
+        }]
+
+    try:
+        # Appel à l'API Brevo
+        req = urllib.request.Request(
+            'https://api.brevo.com/v3/smtp/email',
+            data=json.dumps(payload).encode('utf-8'),
+            headers={
+                'accept': 'application/json',
+                'api-key': api_key,
+                'content-type': 'application/json'
+            },
+            method='POST'
+        )
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            logger.info(f"Email envoyé via API Brevo à {to_email}: {result}")
+            return {'success': True, 'message_id': result.get('messageId')}
+
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        logger.error(f"Erreur API Brevo: {e.code} - {error_body}")
+        return {'success': False, 'error': f'Erreur API Brevo: {error_body}'}
+    except urllib.error.URLError as e:
+        logger.error(f"Erreur connexion API Brevo: {e}")
+        return {'success': False, 'error': f'Erreur connexion: {str(e)}'}
+    except Exception as e:
+        logger.error(f"Erreur envoi email API: {e}")
+        return {'success': False, 'error': str(e)}
 
 
 def send_welcome_email(user_email, user_name, temp_password):
@@ -1905,63 +1967,57 @@ def update_email_config():
 @login_required
 @super_admin_required
 def test_email():
-    """Envoie un email de test pour vérifier la configuration SMTP"""
+    """Envoie un email de test via l'API Brevo"""
     data = request.get_json() or {}
     test_email_addr = data.get('email', current_user.email)
 
     email_config = load_email_config()
 
-    if not email_config.get('smtp_username') or not email_config.get('smtp_password'):
-        return jsonify({'success': False, 'error': 'Configuration SMTP incomplète'}), 400
+    if not email_config.get('smtp_password'):
+        return jsonify({'success': False, 'error': 'Clé API Brevo non configurée'}), 400
 
-    try:
-        # Créer un email simple de test
-        msg = MIMEMultipart()
-        msg['From'] = f"Peoples Post <{email_config.get('smtp_username', '')}>"
-        msg['To'] = test_email_addr
-        msg['Subject'] = "Test - Configuration Email Peoples Post"
+    # Contenu de l'email de test
+    html_content = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2 style="color: #3026f0;">Test - Configuration Email Peoples Post</h2>
+        <p>Bonjour,</p>
+        <p>Ceci est un email de test envoyé depuis le Générateur de Factures Peoples Post.</p>
+        <p><strong>Si vous recevez cet email, la configuration est correcte !</strong></p>
+        <hr style="border: 1px solid #eee; margin: 20px 0;">
+        <p style="color: #666; font-size: 12px;">
+            Configuration utilisée:<br>
+            - Serveur: {email_config.get('smtp_server')}<br>
+            - Expéditeur: {email_config.get('sender_email') or email_config.get('smtp_username')}
+        </p>
+        <p>Cordialement,<br>L'équipe Peoples Post</p>
+    </body>
+    </html>
+    """
 
-        body = f"""Bonjour,
+    text_content = f"""Bonjour,
 
 Ceci est un email de test envoyé depuis le Générateur de Factures Peoples Post.
 
-Si vous recevez cet email, la configuration SMTP est correcte.
-
-Configuration utilisée:
-- Serveur: {email_config.get('smtp_server')}
-- Port: {email_config.get('smtp_port')}
-- Utilisateur: {email_config.get('smtp_username')}
+Si vous recevez cet email, la configuration est correcte !
 
 Cordialement,
 L'équipe Peoples Post
 """
-        msg.attach(MIMEText(body, 'plain', 'utf-8'))
 
-        # Connexion SMTP
-        server = smtplib.SMTP(
-            email_config.get('smtp_server', 'smtp.gmail.com'),
-            email_config.get('smtp_port', 587),
-            timeout=30
-        )
-        server.starttls()
-        server.login(
-            email_config.get('smtp_username', ''),
-            email_config.get('smtp_password', '')
-        )
-        server.send_message(msg)
-        server.quit()
+    # Envoyer via l'API Brevo
+    result = send_email_via_api(
+        to_email=test_email_addr,
+        to_name=current_user.name or test_email_addr,
+        subject="Test - Configuration Email Peoples Post",
+        html_content=html_content,
+        text_content=text_content
+    )
 
-        logger.info(f"Email de test envoyé à {test_email_addr}")
+    if result.get('success'):
         return jsonify({'success': True, 'message': f'Email de test envoyé à {test_email_addr}'})
-
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"Erreur auth SMTP: {e}")
-        return jsonify({'success': False, 'error': 'Échec d\'authentification SMTP - vérifiez les identifiants'}), 400
-    except smtplib.SMTPException as e:
-        logger.error(f"Erreur SMTP: {e}")
-        return jsonify({'success': False, 'error': f'Erreur SMTP: {str(e)}'}), 400
-    except Exception as e:
-        logger.error(f"Erreur test email: {e}")
+    else:
+        return jsonify({'success': False, 'error': result.get('error', 'Erreur inconnue')}), 400
         return jsonify({'success': False, 'error': f'Erreur: {str(e)}'}), 500
 
 

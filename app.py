@@ -826,25 +826,10 @@ def send_email_via_api(to_email, to_name, subject, html_content, text_content=No
 
 
 def send_welcome_email(user_email, user_name, temp_password):
-    """Envoie un email de bienvenue au nouvel utilisateur"""
-    email_config = load_email_config()
+    """Envoie un email de bienvenue au nouvel utilisateur via l'API Brevo"""
 
-    if not email_config.get('smtp_username') or not email_config.get('smtp_password'):
-        return {'success': False, 'error': 'Configuration SMTP incomplète'}
-
-    try:
-        # Créer le message multipart/related pour le HTML avec images inline
-        msg = MIMEMultipart('related')
-        msg['From'] = f"Peoples Post <{email_config.get('smtp_username', '')}>"
-        msg['To'] = user_email
-        msg['Subject'] = "Bienvenue sur le Générateur de Factures Peoples Post"
-
-        # Créer la partie alternative (HTML + texte)
-        msg_alternative = MIMEMultipart('alternative')
-        msg.attach(msg_alternative)
-
-        # Corps de l'email en texte brut (fallback)
-        body_text = f"""Bonjour {user_name or 'et bienvenue'} !
+    # Corps de l'email en texte brut
+    text_content = f"""Bonjour {user_name or 'et bienvenue'} !
 
 Votre compte a été créé sur le Générateur de Factures Peoples Post.
 
@@ -859,45 +844,18 @@ Connectez-vous sur : https://pp-invoces-generator.up.railway.app/login
 Cordialement,
 L'équipe Peoples Post
 """
-        msg_alternative.attach(MIMEText(body_text, 'plain', 'utf-8'))
 
-        # Corps de l'email en HTML
-        body_html = create_welcome_email_html(user_name, user_email, temp_password)
-        msg_alternative.attach(MIMEText(body_html, 'html', 'utf-8'))
+    # Corps de l'email en HTML
+    html_content = create_welcome_email_html(user_name, user_email, temp_password)
 
-        # Ajouter le logo comme image intégrée
-        if os.path.exists(LOGO_EMAIL_PATH):
-            with open(LOGO_EMAIL_PATH, 'rb') as f:
-                logo = MIMEImage(f.read())
-                logo.add_header('Content-ID', '<logo>')
-                logo.add_header('Content-Disposition', 'inline', filename='logo.png')
-                msg.attach(logo)
-
-        # Connexion SMTP et envoi avec timeout
-        smtp_server = email_config.get('smtp_server', 'smtp.gmail.com')
-        smtp_port = int(email_config.get('smtp_port', 465))
-        smtp_username = email_config.get('smtp_username', '')
-        smtp_password = email_config.get('smtp_password', '')
-
-        # Utiliser SSL pour port 465, STARTTLS pour 587
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
-        else:
-            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
-            server.starttls()
-
-        server.login(smtp_username, smtp_password)
-        server.send_message(msg)
-        server.quit()
-
-        return {'success': True}
-
-    except smtplib.SMTPAuthenticationError:
-        return {'success': False, 'error': 'Échec d\'authentification SMTP'}
-    except smtplib.SMTPException as e:
-        return {'success': False, 'error': f'Erreur SMTP: {str(e)}'}
-    except Exception as e:
-        return {'success': False, 'error': f'Erreur: {str(e)}'}
+    # Envoyer via l'API Brevo
+    return send_email_via_api(
+        to_email=user_email,
+        to_name=user_name or user_email,
+        subject="Bienvenue sur le Générateur de Factures Peoples Post",
+        html_content=html_content,
+        text_content=text_content
+    )
 
 
 def create_html_email(body_text, invoice_data, email_type='invoice'):

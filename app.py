@@ -812,16 +812,19 @@ L'équipe Peoples Post
                 msg.attach(logo)
 
         # Connexion SMTP et envoi avec timeout
-        server = smtplib.SMTP(
-            email_config.get('smtp_server', 'smtp.gmail.com'),
-            email_config.get('smtp_port', 587),
-            timeout=30  # 30 secondes max
-        )
-        server.starttls()
-        server.login(
-            email_config.get('smtp_username', ''),
-            email_config.get('smtp_password', '')
-        )
+        smtp_server = email_config.get('smtp_server', 'smtp.gmail.com')
+        smtp_port = int(email_config.get('smtp_port', 465))
+        smtp_username = email_config.get('smtp_username', '')
+        smtp_password = email_config.get('smtp_password', '')
+
+        # Utiliser SSL pour port 465, STARTTLS pour 587
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
+        else:
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+            server.starttls()
+
+        server.login(smtp_username, smtp_password)
         server.send_message(msg)
         server.quit()
 
@@ -1148,16 +1151,19 @@ def send_invoice_email(invoice_data, email_config, batch_folder, sender_name=Non
                 msg.attach(pdf_attachment)
 
         # Connexion SMTP et envoi avec timeout
-        server = smtplib.SMTP(
-            email_config.get('smtp_server', 'smtp.gmail.com'),
-            email_config.get('smtp_port', 587),
-            timeout=30  # 30 secondes max
-        )
-        server.starttls()
-        server.login(
-            email_config.get('smtp_username', ''),
-            email_config.get('smtp_password', '')
-        )
+        smtp_server = email_config.get('smtp_server', 'smtp.gmail.com')
+        smtp_port = int(email_config.get('smtp_port', 465))
+        smtp_username = email_config.get('smtp_username', '')
+        smtp_password = email_config.get('smtp_password', '')
+
+        # Utiliser SSL pour port 465, STARTTLS pour 587
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
+        else:
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+            server.starttls()
+
+        server.login(smtp_username, smtp_password)
         server.send_message(msg)
         server.quit()
 
@@ -1253,16 +1259,19 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
                 msg.attach(pdf_attachment)
 
         # Connexion SMTP et envoi avec timeout
-        server = smtplib.SMTP(
-            email_config.get('smtp_server', 'smtp.gmail.com'),
-            email_config.get('smtp_port', 587),
-            timeout=30  # 30 secondes max
-        )
-        server.starttls()
-        server.login(
-            email_config.get('smtp_username', ''),
-            email_config.get('smtp_password', '')
-        )
+        smtp_server = email_config.get('smtp_server', 'smtp.gmail.com')
+        smtp_port = int(email_config.get('smtp_port', 465))
+        smtp_username = email_config.get('smtp_username', '')
+        smtp_password = email_config.get('smtp_password', '')
+
+        # Utiliser SSL pour port 465, STARTTLS pour 587
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
+        else:
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+            server.starttls()
+
+        server.login(smtp_username, smtp_password)
         server.send_message(msg)
         server.quit()
 

@@ -111,7 +111,16 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
     JSON_AS_ASCII=False,
     JSON_SORT_KEYS=False,
+    SEND_FILE_MAX_AGE_DEFAULT=31536000,  # Cache fichiers statiques 1 an
 )
+
+# Compression GZIP
+try:
+    from flask_compress import Compress
+    Compress(app)
+    logger.info("Compression GZIP activée")
+except ImportError:
+    logger.info("flask-compress non installé - compression désactivée")
 
 # Setup logging
 logger = setup_logging(app)
@@ -389,6 +398,12 @@ def after_request(response):
                 f"{request.method} {request.path} -> {response.status_code} "
                 f"({duration:.2f}ms)"
             )
+
+    # Cache headers pour fichiers statiques (CSS, JS, images)
+    if request.path.startswith('/static'):
+        response.headers['Cache-Control'] = 'public, max-age=31536000'  # 1 an
+    elif request.path.startswith('/api'):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
 
     # Security Headers
     response.headers['X-Content-Type-Options'] = 'nosniff'

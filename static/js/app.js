@@ -581,7 +581,8 @@ const emailTemplateFieldIds = [
     'email-subject', 'email-template',
     'reminder-1-subject', 'reminder-1-template',
     'reminder-2-subject', 'reminder-2-template',
-    'reminder-3-subject', 'reminder-3-template'
+    'reminder-3-subject', 'reminder-3-template',
+    'reminder-4-subject', 'reminder-4-template'
 ];
 
 // ==========================================================================
@@ -614,13 +615,15 @@ async function loadEmailConfig() {
         document.getElementById('email-subject').value = config.email_subject || '';
         document.getElementById('email-template').value = config.email_template || '';
 
-        // Reminder templates (3 types)
+        // Reminder templates (4 types)
         document.getElementById('reminder-1-subject').value = config.reminder_1_subject || '';
         document.getElementById('reminder-1-template').value = config.reminder_1_template || '';
         document.getElementById('reminder-2-subject').value = config.reminder_2_subject || '';
         document.getElementById('reminder-2-template').value = config.reminder_2_template || '';
         document.getElementById('reminder-3-subject').value = config.reminder_3_subject || '';
         document.getElementById('reminder-3-template').value = config.reminder_3_template || '';
+        document.getElementById('reminder-4-subject').value = config.reminder_4_subject || '';
+        document.getElementById('reminder-4-template').value = config.reminder_4_template || '';
 
         // Load user's sender identity
         await loadSenderConfig();
@@ -671,7 +674,9 @@ document.getElementById('btn-save-email-config').addEventListener('click', async
         reminder_2_subject: document.getElementById('reminder-2-subject').value,
         reminder_2_template: document.getElementById('reminder-2-template').value,
         reminder_3_subject: document.getElementById('reminder-3-subject').value,
-        reminder_3_template: document.getElementById('reminder-3-template').value
+        reminder_3_template: document.getElementById('reminder-3-template').value,
+        reminder_4_subject: document.getElementById('reminder-4-subject').value,
+        reminder_4_template: document.getElementById('reminder-4-template').value
     };
 
     try {
@@ -1209,10 +1214,11 @@ function renderHistory(history) {
             ? `<span class="payment-badge paid" data-action="toggle-payment" data-id="${safeId}" title="Cliquer pour marquer comme impayée">Payée</span>`
             : `<span class="payment-badge pending" data-action="toggle-payment" data-id="${safeId}" title="Cliquer pour marquer comme payée">Impayée</span>`;
 
-        // Reminder buttons for R1, R2, R3
+        // Reminder buttons for R1, R2, R3, R4
         const r1Sent = inv.reminder_1_sent;
         const r2Sent = inv.reminder_2_sent;
         const r3Sent = inv.reminder_3_sent;
+        const r4Sent = inv.reminder_4_sent;
 
         const r1Btn = r1Sent
             ? '<button class="reminder-cell-btn sent" disabled title="Envoyée">R1</button>'
@@ -1232,6 +1238,12 @@ function renderHistory(history) {
                 ? '<button class="reminder-cell-btn r3" disabled title="Non disponible">R3</button>'
                 : `<button class="reminder-cell-btn r3" data-action="send-reminder" data-id="${safeId}" data-type="3" title="Envoyer relance 3">R3</button>`;
 
+        const r4Btn = r4Sent
+            ? '<button class="reminder-cell-btn sent" disabled title="Envoyée">R4</button>'
+            : (isPaid || !hasEmail)
+                ? '<button class="reminder-cell-btn r4" disabled title="Non disponible">R4</button>'
+                : `<button class="reminder-cell-btn r4" data-action="send-reminder" data-id="${safeId}" data-type="4" title="Coupure compte">R4</button>`;
+
         return `
             <tr data-history-id="${safeId}">
                 <td><input type="checkbox" class="history-checkbox" data-id="${safeId}" ${isPaid ? 'disabled' : ''}></td>
@@ -1242,6 +1254,7 @@ function renderHistory(history) {
                 <td>${r1Btn}</td>
                 <td>${r2Btn}</td>
                 <td>${r3Btn}</td>
+                <td>${r4Btn}</td>
                 <td class="actions-cell">
                     <button class="history-action-btn download" data-action="download" data-id="${safeId}" title="Télécharger">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1595,7 +1608,7 @@ if (emailPreviewModal) {
 
 /**
  * Affiche une prévisualisation de l'email
- * @param {string} emailType - 'invoice', 'reminder_1', 'reminder_2', 'reminder_3'
+ * @param {string} emailType - 'invoice', 'reminder_1', 'reminder_2', 'reminder_3', 'reminder_4'
  */
 async function previewEmail(emailType) {
     const modal = document.getElementById('email-preview-modal');
@@ -1606,7 +1619,8 @@ async function previewEmail(emailType) {
         'invoice': 'Prévisualisation - Email de facture',
         'reminder_1': 'Prévisualisation - Relance 1 (48h)',
         'reminder_2': 'Prévisualisation - Relance 2 (Avertissement)',
-        'reminder_3': 'Prévisualisation - Relance 3 (Dernier avis)'
+        'reminder_3': 'Prévisualisation - Relance 3 (Dernier avis)',
+        'reminder_4': 'Prévisualisation - Relance 4 (Coupure compte)'
     };
 
     title.textContent = titles[emailType] || 'Prévisualisation';

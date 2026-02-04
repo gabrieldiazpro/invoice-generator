@@ -1406,6 +1406,17 @@ a:hover {
     background-color: #dc2626;
 }
 
+.btn-reminder-4 {
+    background-color: #7f1d1d;
+    color: #fff;
+    font-weight: 600;
+    min-width: 36px;
+}
+
+.btn-reminder-4:hover:not(:disabled) {
+    background-color: #450a0a;
+}
+
 /* Reminder cell buttons in table */
 .reminder-cell-btn {
     display: inline-flex;
@@ -1448,6 +1459,16 @@ a:hover {
 
 .reminder-cell-btn.r3:hover:not(:disabled) {
     background-color: #ef4444;
+    color: #fff;
+}
+
+.reminder-cell-btn.r4 {
+    background-color: #fecaca;
+    color: #7f1d1d;
+}
+
+.reminder-cell-btn.r4:hover:not(:disabled) {
+    background-color: #7f1d1d;
     color: #fff;
 }
 

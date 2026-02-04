@@ -218,6 +218,7 @@
                                         <th>R1</th>
                                         <th>R2</th>
                                         <th>R3</th>
+                                        <th>R4</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -408,6 +409,26 @@ Veuillez trouver ci-joint votre facture..."></textarea>
                         <div class="form-group">
                             <label for="reminder-3-template">Corps de l'email</label>
                             <textarea id="reminder-3-template" rows="8" placeholder="Dernier avis avant suspension..."></textarea>
+                            <small class="form-hint">Variables: {client_name}, {company_name}, {invoice_number}, {total_ttc}, {total_ht}, {period}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h2>Relance 4 - Coupure du compte (suspension effective)</h2>
+                        <button class="btn btn-reminder-4 btn-sm" onclick="previewEmail('reminder_4')">
+                            Visualiser
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="reminder-4-subject">Objet</label>
+                            <input type="text" id="reminder-4-subject" placeholder="COMPTE SUSPENDU - Facture impayée">
+                        </div>
+                        <div class="form-group">
+                            <label for="reminder-4-template">Corps de l'email</label>
+                            <textarea id="reminder-4-template" rows="8" placeholder="Votre compte a été suspendu suite au non-paiement..."></textarea>
                             <small class="form-hint">Variables: {client_name}, {company_name}, {invoice_number}, {total_ttc}, {total_ht}, {period}</small>
                         </div>
                         <div class="form-actions">

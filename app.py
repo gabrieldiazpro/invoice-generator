@@ -922,21 +922,23 @@ def create_html_email(body_text, invoice_data, email_type='invoice'):
     Args:
         body_text: Le contenu texte de l'email
         invoice_data: Les données de la facture
-        email_type: 'invoice', 'reminder_1', 'reminder_2', 'reminder_3'
+        email_type: 'invoice', 'reminder_1', 'reminder_2', 'reminder_3', 'reminder_4'
     """
     # Couleurs selon le type d'email
     header_colors = {
         'invoice': '#3026f0',      # Bleu principal
         'reminder_1': '#f59e0b',   # Jaune/Orange
         'reminder_2': '#f97316',   # Orange
-        'reminder_3': '#ef4444'    # Rouge
+        'reminder_3': '#ef4444',   # Rouge
+        'reminder_4': '#7f1d1d'    # Rouge foncé (coupure)
     }
 
     header_titles = {
         'invoice': 'Votre Facture',
         'reminder_1': 'Rappel de Paiement',
         'reminder_2': 'Action Requise',
-        'reminder_3': 'Dernier Avis'
+        'reminder_3': 'Dernier Avis',
+        'reminder_4': 'Suspension de Compte'
     }
 
     header_color = header_colors.get(email_type, '#3026f0')
@@ -951,6 +953,8 @@ def create_html_email(body_text, invoice_data, email_type='invoice'):
         badge_html = '<span style="display: inline-block; background-color: #fff3cd; color: #856404; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 15px;">URGENT</span><br>'
     elif email_type == 'reminder_3':
         badge_html = '<span style="display: inline-block; background-color: #f8d7da; color: #721c24; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 15px;">SUSPENSION IMMINENTE</span><br>'
+    elif email_type == 'reminder_4':
+        badge_html = '<span style="display: inline-block; background-color: #7f1d1d; color: #ffffff; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 15px;">COMPTE SUSPENDU</span><br>'
 
     html = f'''<!DOCTYPE html>
 <html lang="fr">
@@ -1131,7 +1135,9 @@ def add_to_invoice_history(invoice_data, batch_id):
         'reminder_2_sent': False,
         'reminder_2_at': None,
         'reminder_3_sent': False,
-        'reminder_3_at': None
+        'reminder_3_at': None,
+        'reminder_4_sent': False,
+        'reminder_4_at': None
     }
     invoice_history_collection.insert_one(history_entry)
     return history_entry
@@ -1269,7 +1275,7 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
         invoice_data: Les données de la facture
         email_config: La configuration SMTP et templates
         batch_folder: Le dossier du batch contenant les PDFs
-        reminder_type: 1 = première relance (48h), 2 = avertissement (7j), 3 = dernier avis
+        reminder_type: 1 = première relance (48h), 2 = avertissement (7j), 3 = dernier avis, 4 = coupure compte
         sender_name: Nom de l'expéditeur (optionnel, priorité sur email_config)
         sender_email: Email de l'expéditeur (optionnel, priorité sur email_config)
     """
@@ -1969,7 +1975,8 @@ def update_email_config():
     for key in ['sender_email', 'sender_name', 'email_subject', 'email_template',
                 'reminder_1_subject', 'reminder_1_template',
                 'reminder_2_subject', 'reminder_2_template',
-                'reminder_3_subject', 'reminder_3_template']:
+                'reminder_3_subject', 'reminder_3_template',
+                'reminder_4_subject', 'reminder_4_template']:
         if key in data:
             config[key] = data[key]
 
@@ -2199,7 +2206,7 @@ def get_email_status(batch_id):
 @login_required
 def preview_email(email_type):
     """Génère une prévisualisation de l'email HTML"""
-    if email_type not in ['invoice', 'reminder_1', 'reminder_2', 'reminder_3']:
+    if email_type not in ['invoice', 'reminder_1', 'reminder_2', 'reminder_3', 'reminder_4']:
         return jsonify({'error': 'Type d\'email invalide'}), 400
 
     email_config = load_email_config()
@@ -2239,14 +2246,16 @@ def create_html_email_preview(body_text, invoice_data, email_type='invoice'):
         'invoice': '#3026f0',
         'reminder_1': '#f59e0b',
         'reminder_2': '#f97316',
-        'reminder_3': '#ef4444'
+        'reminder_3': '#ef4444',
+        'reminder_4': '#7f1d1d'
     }
 
     header_titles = {
         'invoice': 'Votre Facture',
         'reminder_1': 'Rappel de Paiement',
         'reminder_2': 'Action Requise',
-        'reminder_3': 'Dernier Avis'
+        'reminder_3': 'Dernier Avis',
+        'reminder_4': 'Suspension de Compte'
     }
 
     header_color = header_colors.get(email_type, '#3026f0')
@@ -2267,6 +2276,8 @@ def create_html_email_preview(body_text, invoice_data, email_type='invoice'):
         badge_html = '<span style="display: inline-block; background-color: #fff3cd; color: #856404; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 15px;">URGENT</span><br>'
     elif email_type == 'reminder_3':
         badge_html = '<span style="display: inline-block; background-color: #f8d7da; color: #721c24; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 15px;">SUSPENSION IMMINENTE</span><br>'
+    elif email_type == 'reminder_4':
+        badge_html = '<span style="display: inline-block; background-color: #7f1d1d; color: #ffffff; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 15px;">COMPTE SUSPENDU</span><br>'
 
     html = f'''<!DOCTYPE html>
 <html lang="fr">
@@ -2464,9 +2475,9 @@ def send_single_reminder(invoice_id, reminder_type):
     """Envoie un email de relance pour une facture spécifique
 
     Args:
-        reminder_type: 1 = première relance (48h), 2 = avertissement (7j), 3 = dernier avis
+        reminder_type: 1 = première relance (48h), 2 = avertissement (7j), 3 = dernier avis, 4 = coupure compte
     """
-    if reminder_type not in [1, 2, 3]:
+    if reminder_type not in [1, 2, 3, 4]:
         return jsonify({'error': 'Type de relance invalide (1, 2 ou 3)'}), 400
 
     history = load_invoice_history()
@@ -2522,7 +2533,7 @@ def send_single_reminder(invoice_id, reminder_type):
 @login_required
 def send_all_reminders(reminder_type):
     """Envoie des relances de type spécifique pour toutes les factures impayées"""
-    if reminder_type not in [1, 2, 3]:
+    if reminder_type not in [1, 2, 3, 4]:
         return jsonify({'error': 'Type de relance invalide (1, 2 ou 3)'}), 400
 
     data = request.json or {}

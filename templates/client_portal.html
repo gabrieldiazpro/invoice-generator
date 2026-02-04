@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Espace Client - Peoples Post</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Montserrat:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        /* Client Portal Specific Styles */
+        .client-header {
+            background: linear-gradient(135deg, #3026f0 0%, #5046e5 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+
+        .client-welcome {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .client-welcome h1 {
+            color: white;
+            margin: 0 0 0.5rem 0;
+            font-size: 1.75rem;
+        }
+
+        .client-welcome p {
+            color: rgba(255, 255, 255, 0.8);
+            margin: 0;
+        }
+
+        .btn-logout-client {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .btn-logout-client:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .summary-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e5e7eb;
+        }
+
+        .summary-card.pending {
+            border-left: 4px solid #f59e0b;
+        }
+
+        .summary-card.paid {
+            border-left: 4px solid #10b981;
+        }
+
+        .summary-card.total {
+            border-left: 4px solid #3026f0;
+        }
+
+        .summary-card-label {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .summary-card-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .summary-card-count {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+
+        .invoices-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e5e7eb;
+            overflow: hidden;
+        }
+
+        .invoices-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .invoices-header h2 {
+            margin: 0;
+            font-size: 1.25rem;
+            color: #111827;
+        }
+
+        .invoices-filters {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            border: 1px solid #e5e7eb;
+            background: white;
+            color: #6b7280;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn:hover {
+            border-color: #3026f0;
+            color: #3026f0;
+        }
+
+        .filter-btn.active {
+            background: #3026f0;
+            color: white;
+            border-color: #3026f0;
+        }
+
+        .search-input {
+            padding: 0.5rem 1rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            width: 200px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #3026f0;
+            box-shadow: 0 0 0 3px rgba(48, 38, 240, 0.1);
+        }
+
+        .invoices-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .invoices-table th {
+            text-align: left;
+            padding: 1rem 1.5rem;
+            background: #f9fafb;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #6b7280;
+            font-weight: 600;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .invoices-table td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 0.875rem;
+            color: #374151;
+        }
+
+        .invoices-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .invoices-table tr:hover {
+            background: #f9fafb;
+        }
+
+        .invoice-number {
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .status-badge.paid {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-badge.pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: #f3f4f6;
+            color: #374151;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-download:hover {
+            background: #3026f0;
+            color: white;
+        }
+
+        .empty-state {
+            padding: 3rem;
+            text-align: center;
+            color: #6b7280;
+        }
+
+        .empty-state svg {
+            margin-bottom: 1rem;
+            color: #d1d5db;
+        }
+
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 3rem;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #3026f0;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .amount {
+            font-weight: 500;
+            text-align: right;
+        }
+
+        .amount-ttc {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .client-welcome {
+                flex-direction: column;
+                text-align: center;
+                gap: 1rem;
+            }
+
+            .invoices-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .invoices-filters {
+                flex-direction: column;
+            }
+
+            .search-input {
+                width: 100%;
+            }
+
+            .invoices-table {
+                display: block;
+                overflow-x: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header Client -->
+    <div class="client-header">
+        <div class="container">
+            <div class="client-welcome">
+                <div>
+                    <h1>Bienvenue, <span id="client-name">{{ user.name }}</span></h1>
+                    <p>Consultez vos factures et suivez votre situation financière</p>
+                </div>
+                <a href="/logout" class="btn-logout-client">Déconnexion</a>
+            </div>
+        </div>
+    </div>
+
+    <main class="main">
+        <div class="container">
+            <!-- Résumé financier -->
+            <div class="summary-cards" id="summary-cards">
+                <div class="summary-card total">
+                    <div class="summary-card-label">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        Total facturé
+                    </div>
+                    <div class="summary-card-value" id="total-ttc">0,00 €</div>
+                    <div class="summary-card-count"><span id="total-count">0</span> facture(s)</div>
+                </div>
+                <div class="summary-card paid">
+                    <div class="summary-card-label">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                        Total payé
+                    </div>
+                    <div class="summary-card-value" id="total-paid">0,00 €</div>
+                    <div class="summary-card-count"><span id="paid-count">0</span> facture(s)</div>
+                </div>
+                <div class="summary-card pending">
+                    <div class="summary-card-label">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        En attente
+                    </div>
+                    <div class="summary-card-value" id="total-pending">0,00 €</div>
+                    <div class="summary-card-count"><span id="pending-count">0</span> facture(s)</div>
+                </div>
+            </div>
+
+            <!-- Liste des factures -->
+            <div class="invoices-section">
+                <div class="invoices-header">
+                    <h2>Mes factures</h2>
+                    <div class="invoices-filters">
+                        <button class="filter-btn active" data-filter="all">Toutes</button>
+                        <button class="filter-btn" data-filter="pending">En attente</button>
+                        <button class="filter-btn" data-filter="paid">Payées</button>
+                        <input type="text" class="search-input" id="search-invoice" placeholder="Rechercher...">
+                    </div>
+                </div>
+                <div id="invoices-content">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast notification -->
+    <div id="toast" class="toast hidden">
+        <span class="toast-message"></span>
+    </div>
+
+    <script>
+        // Variables globales
+        let currentFilter = 'all';
+        let allInvoices = [];
+
+        // Formatage des montants
+        function formatAmount(amount) {
+            return new Intl.NumberFormat('fr-FR', {
+                style: 'currency',
+                currency: 'EUR'
+            }).format(amount || 0);
+        }
+
+        // Formatage de la date
+        function formatDate(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('fr-FR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+        }
+
+        // Afficher un toast
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const toastMessage = toast.querySelector('.toast-message');
+            toastMessage.textContent = message;
+            toast.className = `toast ${type}`;
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3000);
+        }
+
+        // Charger le dashboard
+        async function loadDashboard() {
+            try {
+                const response = await fetch('/api/client/dashboard');
+                const data = await response.json();
+
+                if (data.success) {
+                    // Mettre à jour le nom du client
+                    document.getElementById('client-name').textContent = data.client.name || '{{ user.name }}';
+
+                    // Mettre à jour les totaux
+                    document.getElementById('total-ttc').textContent = formatAmount(data.summary.total_ttc);
+                    document.getElementById('total-count').textContent = data.summary.total_invoices;
+
+                    document.getElementById('total-paid').textContent = formatAmount(data.summary.total_paid_ttc);
+                    document.getElementById('paid-count').textContent = data.summary.paid_count;
+
+                    document.getElementById('total-pending').textContent = formatAmount(data.summary.total_pending_ttc);
+                    document.getElementById('pending-count').textContent = data.summary.pending_count;
+                }
+            } catch (error) {
+                console.error('Erreur chargement dashboard:', error);
+                showToast('Erreur lors du chargement du dashboard', 'error');
+            }
+        }
+
+        // Charger les factures
+        async function loadInvoices(filter = 'all') {
+            const contentDiv = document.getElementById('invoices-content');
+            contentDiv.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+            try {
+                let url = '/api/client/invoices';
+                if (filter && filter !== 'all') {
+                    url += `?status=${filter}`;
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.success) {
+                    allInvoices = data.invoices;
+                    renderInvoices(allInvoices);
+                }
+            } catch (error) {
+                console.error('Erreur chargement factures:', error);
+                contentDiv.innerHTML = `
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <p>Erreur lors du chargement des factures</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Afficher les factures
+        function renderInvoices(invoices) {
+            const contentDiv = document.getElementById('invoices-content');
+
+            if (!invoices || invoices.length === 0) {
+                contentDiv.innerHTML = `
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        <p>Aucune facture trouvée</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const tableHTML = `
+                <table class="invoices-table">
+                    <thead>
+                        <tr>
+                            <th>N° Facture</th>
+                            <th>Date</th>
+                            <th>Période</th>
+                            <th>Montant HT</th>
+                            <th>Montant TTC</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${invoices.map(inv => `
+                            <tr>
+                                <td class="invoice-number">${inv.invoice_number || '-'}</td>
+                                <td>${formatDate(inv.created_at)}</td>
+                                <td>${inv.period || '-'}</td>
+                                <td class="amount">${inv.total_ht_formatted || formatAmount(inv.total_ht)}</td>
+                                <td class="amount">${inv.total_ttc_formatted || formatAmount(inv.total_ttc)}</td>
+                                <td>
+                                    <span class="status-badge ${inv.payment_status === 'paid' ? 'paid' : 'pending'}">
+                                        ${inv.payment_status === 'paid' ? 'Payée' : 'En attente'}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button class="btn-download" onclick="downloadInvoice('${inv.id}', '${inv.invoice_number}')">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                        </svg>
+                                        Télécharger
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            contentDiv.innerHTML = tableHTML;
+        }
+
+        // Télécharger une facture
+        async function downloadInvoice(invoiceId, invoiceNumber) {
+            try {
+                const response = await fetch(`/api/client/invoices/${invoiceId}/download`);
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Facture_${invoiceNumber}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                    showToast('Téléchargement démarré', 'success');
+                } else {
+                    const data = await response.json();
+                    showToast(data.error || 'Erreur lors du téléchargement', 'error');
+                }
+            } catch (error) {
+                console.error('Erreur téléchargement:', error);
+                showToast('Erreur lors du téléchargement', 'error');
+            }
+        }
+
+        // Filtrer les factures localement
+        function filterInvoices(searchTerm) {
+            const filtered = allInvoices.filter(inv => {
+                const matchesSearch = !searchTerm ||
+                    (inv.invoice_number && inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                    (inv.period && inv.period.toLowerCase().includes(searchTerm.toLowerCase()));
+                return matchesSearch;
+            });
+            renderInvoices(filtered);
+        }
+
+        // Initialisation
+        document.addEventListener('DOMContentLoaded', () => {
+            // Charger les données
+            loadDashboard();
+            loadInvoices();
+
+            // Gestion des filtres
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentFilter = btn.dataset.filter;
+                    loadInvoices(currentFilter);
+                });
+            });
+
+            // Gestion de la recherche
+            const searchInput = document.getElementById('search-invoice');
+            let searchTimeout;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    filterInvoices(e.target.value);
+                }, 300);
+            });
+        });
+    </script>
+</body>
+</html>

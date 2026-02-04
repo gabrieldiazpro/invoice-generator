@@ -529,6 +529,69 @@ Veuillez trouver ci-joint votre facture..."></textarea>
         </div>
     </div>
 
+    <!-- Modal Création compte client -->
+    <div class="modal hidden" id="create-client-account-modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Créer un espace client</h3>
+                <button class="modal-close" id="client-account-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="client-account-info" class="client-account-info">
+                    <p>Vous êtes sur le point de créer un espace client pour :</p>
+                    <div class="client-account-details">
+                        <p><strong>Client :</strong> <span id="account-client-name"></span></p>
+                        <p><strong>Email :</strong> <span id="account-client-email"></span></p>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="send-welcome-email" checked>
+                            Envoyer un email de bienvenue avec les identifiants
+                        </label>
+                    </div>
+                    <div class="alert alert-info">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        <span>Un mot de passe temporaire sera généré automatiquement. Le client pourra le modifier après sa première connexion.</span>
+                    </div>
+                </div>
+                <div id="client-account-result" class="hidden">
+                    <div class="success-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                    </div>
+                    <p class="success-message">Compte client créé avec succès !</p>
+                    <div id="account-credentials" class="account-credentials hidden">
+                        <p><strong>Email :</strong> <span id="result-email"></span></p>
+                        <p><strong>Mot de passe temporaire :</strong> <code id="result-password"></code></p>
+                        <p class="warning-text">Notez ces identifiants, ils ne seront plus affichés.</p>
+                    </div>
+                    <div id="email-sent-notice" class="email-sent-notice hidden">
+                        <p>Un email de bienvenue a été envoyé au client avec ses identifiants de connexion.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-client-account">Annuler</button>
+                <button class="btn btn-primary" id="btn-create-client-account">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="8.5" cy="7" r="4"></circle>
+                        <line x1="20" y1="8" x2="20" y2="14"></line>
+                        <line x1="23" y1="11" x2="17" y2="11"></line>
+                    </svg>
+                    Créer le compte
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Résultat envoi emails -->
     <div class="modal hidden" id="email-results-modal">
         <div class="modal-backdrop"></div>

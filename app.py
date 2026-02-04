@@ -550,6 +550,7 @@ class User(UserMixin):
         self.email = user_data['email']
         self.name = user_data.get('name', '')
         self.role = user_data.get('role', 'user')
+        self.client_id = user_data.get('client_id')  # Nom du shipper associé (pour les clients)
         # Impersonation: ID du super admin qui impersonne cet utilisateur
         self.impersonated_by = impersonated_by
 
@@ -558,6 +559,10 @@ class User(UserMixin):
 
     def is_super_admin(self):
         return self.role == 'super_admin'
+
+    def is_client(self):
+        """Retourne True si l'utilisateur est un client"""
+        return self.role == 'client'
 
     def is_impersonating(self):
         """Retourne True si l'utilisateur actuel est impersonné par un super admin"""
@@ -598,6 +603,17 @@ def super_admin_required(f):
         if not current_user.is_authenticated or not current_user.is_super_admin():
             logger.warning(f"Accès super admin refusé: {getattr(current_user, 'email', 'anonymous')} sur {request.path}")
             return jsonify({'error': 'Accès réservé au super administrateur'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def client_required(f):
+    """Décorateur pour restreindre l'accès aux clients"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_client():
+            logger.warning(f"Accès client refusé: {getattr(current_user, 'email', 'anonymous')} sur {request.path}")
+            return jsonify({'error': 'Accès réservé aux clients'}), 403
         return f(*args, **kwargs)
     return decorated_function
 
@@ -1318,6 +1334,9 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
 def login():
     """Route de connexion"""
     if current_user.is_authenticated:
+        # Rediriger les clients vers le portail client
+        if current_user.is_client():
+            return redirect(url_for('client_portal'))
         return redirect(url_for('index'))
 
     if request.method == 'POST':
@@ -1348,7 +1367,7 @@ def login():
         if user_data and check_password_hash(user_data['password'], password):
             user = User(user_data)
             login_user(user, remember=True)
-            logger.info(f"Connexion réussie: {email} - IP: {request.remote_addr}")
+            logger.info(f"Connexion réussie: {email} (role: {user.role}) - IP: {request.remote_addr}")
 
             # Mettre à jour la dernière connexion
             users_collection.update_one(
@@ -1356,9 +1375,15 @@ def login():
                 {'$set': {'last_login': datetime.now()}}
             )
 
+            # Rediriger les clients vers le portail client
+            if user.is_client():
+                redirect_url = url_for('client_portal')
+            else:
+                redirect_url = request.args.get('next') or url_for('index')
+
             if request.is_json:
-                return jsonify({'success': True, 'redirect': url_for('index')})
-            return redirect(request.args.get('next') or url_for('index'))
+                return jsonify({'success': True, 'redirect': redirect_url})
+            return redirect(redirect_url)
 
         logger.warning(f"Échec de connexion: {email} - IP: {request.remote_addr}")
         if request.is_json:
@@ -2591,6 +2616,415 @@ def delete_client(client_name):
     """Supprime un client de MongoDB"""
     clients_collection.delete_one({'_id': client_name})
     return jsonify({'success': True})
+
+
+# ============================================================================
+# Portail Client - Routes et fonctions
+# ============================================================================
+
+def generate_temp_password(length=12):
+    """Génère un mot de passe temporaire aléatoire"""
+    import random
+    import string
+    chars = string.ascii_letters + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
+
+
+def send_client_welcome_email(client_email, client_name, temp_password):
+    """Envoie un email de bienvenue au nouveau compte client via l'API Brevo"""
+
+    text_content = f"""Bonjour {client_name} !
+
+Votre espace client a été créé sur le portail Peoples Post.
+
+Vos identifiants de connexion :
+- Email : {client_email}
+- Mot de passe temporaire : {temp_password}
+
+Vous pouvez désormais accéder à votre espace client pour :
+- Consulter vos factures
+- Suivre votre historique de facturation
+- Voir votre situation financière
+
+Important : Pour des raisons de sécurité, nous vous recommandons de changer votre mot de passe dès votre première connexion.
+
+Connectez-vous sur : https://pp-invoces-generator.up.railway.app/login
+
+Cordialement,
+L'équipe Peoples Post
+"""
+
+    html_content = f'''<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f0f2f5;">
+        <tr>
+            <td style="padding: 40px 20px;">
+                <table role="presentation" width="600" cellspacing="0" cellpadding="0" align="center" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                    <!-- En-tête -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #3026f0 0%, #5046e5 100%); padding: 30px 40px; text-align: center;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">Bienvenue sur votre Espace Client</h1>
+                        </td>
+                    </tr>
+                    <!-- Contenu -->
+                    <tr>
+                        <td style="padding: 40px;">
+                            <p style="font-size: 16px; color: #333; line-height: 1.6; margin: 0 0 20px 0;">
+                                Bonjour <strong>{client_name}</strong>,
+                            </p>
+                            <p style="font-size: 16px; color: #333; line-height: 1.6; margin: 0 0 20px 0;">
+                                Votre espace client a été créé sur le portail Peoples Post.
+                            </p>
+
+                            <!-- Encadré identifiants -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 25px 0;">
+                                <tr>
+                                    <td style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; border-left: 4px solid #3026f0;">
+                                        <p style="font-size: 14px; color: #666; margin: 0 0 10px 0; font-weight: 600;">Vos identifiants de connexion :</p>
+                                        <p style="font-size: 14px; color: #333; margin: 0 0 5px 0;"><strong>Email :</strong> {client_email}</p>
+                                        <p style="font-size: 14px; color: #333; margin: 0;"><strong>Mot de passe temporaire :</strong> <code style="background-color: #e9ecef; padding: 2px 8px; border-radius: 4px; font-family: monospace;">{temp_password}</code></p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="font-size: 16px; color: #333; line-height: 1.6; margin: 0 0 20px 0;">
+                                Vous pouvez désormais accéder à votre espace client pour :
+                            </p>
+                            <ul style="font-size: 14px; color: #555; line-height: 1.8; padding-left: 20px; margin: 0 0 25px 0;">
+                                <li>Consulter vos factures</li>
+                                <li>Suivre votre historique de facturation</li>
+                                <li>Voir votre situation financière</li>
+                            </ul>
+
+                            <!-- Bouton -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td align="center" style="padding: 10px 0 25px 0;">
+                                        <a href="https://pp-invoces-generator.up.railway.app/login" style="display: inline-block; background-color: #3026f0; color: #ffffff; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-weight: 600; font-size: 16px;">Accéder à mon espace</a>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="font-size: 14px; color: #888; line-height: 1.6; margin: 0; border-top: 1px solid #eee; padding-top: 20px;">
+                                <strong>Important :</strong> Pour des raisons de sécurité, nous vous recommandons de changer votre mot de passe dès votre première connexion.
+                            </p>
+                        </td>
+                    </tr>
+                    <!-- Pied de page -->
+                    <tr>
+                        <td style="background-color: #f8f9fa; padding: 25px 40px; text-align: center;">
+                            <p style="font-size: 12px; color: #888; margin: 0;">Peoples Post - Votre partenaire logistique</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>'''
+
+    return send_email_via_api(
+        to_email=client_email,
+        to_name=client_name or client_email,
+        subject="Bienvenue sur votre Espace Client Peoples Post",
+        html_content=html_content,
+        text_content=text_content
+    )
+
+
+@app.route('/api/clients/<client_name>/create-account', methods=['POST'])
+@login_required
+@admin_required
+def create_client_account(client_name):
+    """Crée un compte utilisateur pour un client existant"""
+
+    # Vérifier que le client existe
+    client = clients_collection.find_one({'_id': client_name})
+    if not client:
+        return jsonify({'error': 'Client non trouvé'}), 404
+
+    # Vérifier que le client a un email
+    client_email = client.get('email', '').strip().lower()
+    if not client_email:
+        return jsonify({'error': 'Ce client n\'a pas d\'adresse email configurée'}), 400
+
+    if not validate_email(client_email):
+        return jsonify({'error': 'L\'adresse email du client est invalide'}), 400
+
+    # Vérifier qu'un compte n'existe pas déjà pour cet email
+    existing_user = users_collection.find_one({'email': client_email})
+    if existing_user:
+        return jsonify({'error': 'Un compte existe déjà pour cette adresse email'}), 400
+
+    # Vérifier qu'un compte client n'est pas déjà lié à ce client
+    existing_client_account = users_collection.find_one({'client_id': client_name})
+    if existing_client_account:
+        return jsonify({'error': 'Un compte client existe déjà pour ce client'}), 400
+
+    # Générer un mot de passe temporaire
+    temp_password = generate_temp_password()
+
+    # Créer le compte utilisateur avec le rôle client
+    client_name_display = client.get('nom', client_name)
+    user_data = {
+        'email': client_email,
+        'password': generate_password_hash(temp_password, method='pbkdf2:sha256'),
+        'name': client_name_display,
+        'role': 'client',
+        'client_id': client_name,  # Lien vers le client (shipper name)
+        'created_at': datetime.now(),
+        'created_by': current_user.email
+    }
+
+    result = users_collection.insert_one(user_data)
+
+    # Mettre à jour le client avec le lien vers le compte utilisateur
+    clients_collection.update_one(
+        {'_id': client_name},
+        {'$set': {'user_id': result.inserted_id}}
+    )
+
+    # Envoyer l'email de bienvenue
+    data = request.get_json() or {}
+    send_welcome = data.get('send_welcome_email', True)
+
+    email_sent = False
+    if send_welcome:
+        try:
+            email_result = send_client_welcome_email(client_email, client_name_display, temp_password)
+            email_sent = email_result.get('success', False)
+            if not email_sent:
+                logger.warning(f"Échec envoi email bienvenue client: {email_result.get('error', 'Erreur inconnue')}")
+        except Exception as e:
+            logger.error(f"Erreur lors de l'envoi de l'email de bienvenue: {e}")
+
+    logger.info(f"Compte client créé: {client_email} pour {client_name} par {current_user.email}")
+
+    return jsonify({
+        'success': True,
+        'message': 'Compte client créé avec succès',
+        'user_id': str(result.inserted_id),
+        'email': client_email,
+        'email_sent': email_sent,
+        'temp_password': temp_password if not send_welcome else None  # Renvoyer le mdp si pas d'email
+    })
+
+
+@app.route('/client')
+@login_required
+def client_portal():
+    """Page du portail client"""
+    if not current_user.is_client():
+        return redirect(url_for('index'))
+    return render_template('client_portal.html', user=current_user)
+
+
+@app.route('/api/client/dashboard')
+@login_required
+@client_required
+def get_client_dashboard():
+    """Récupère les données du dashboard client"""
+    client_id = current_user.client_id
+
+    if not client_id:
+        return jsonify({'error': 'Client non configuré'}), 400
+
+    # Récupérer les factures du client
+    invoices = list(invoice_history_collection.find({'shipper': client_id}))
+
+    # Calculer les totaux
+    total_ht = sum(inv.get('total_ht', 0) or 0 for inv in invoices)
+    total_ttc = sum(inv.get('total_ttc', 0) or 0 for inv in invoices)
+
+    # Séparer par statut de paiement
+    paid_invoices = [inv for inv in invoices if inv.get('payment_status') == 'paid']
+    pending_invoices = [inv for inv in invoices if inv.get('payment_status') != 'paid']
+
+    total_paid_ht = sum(inv.get('total_ht', 0) or 0 for inv in paid_invoices)
+    total_paid_ttc = sum(inv.get('total_ttc', 0) or 0 for inv in paid_invoices)
+    total_pending_ht = sum(inv.get('total_ht', 0) or 0 for inv in pending_invoices)
+    total_pending_ttc = sum(inv.get('total_ttc', 0) or 0 for inv in pending_invoices)
+
+    # Récupérer les infos du client
+    client_info = clients_collection.find_one({'_id': client_id})
+
+    return jsonify({
+        'success': True,
+        'client': {
+            'name': client_info.get('nom', client_id) if client_info else client_id,
+            'email': client_info.get('email', '') if client_info else '',
+            'siret': client_info.get('siret', '') if client_info else '',
+            'adresse': client_info.get('adresse', '') if client_info else '',
+            'code_postal': client_info.get('code_postal', '') if client_info else '',
+            'ville': client_info.get('ville', '') if client_info else ''
+        },
+        'summary': {
+            'total_invoices': len(invoices),
+            'total_ht': total_ht,
+            'total_ttc': total_ttc,
+            'total_paid_ht': total_paid_ht,
+            'total_paid_ttc': total_paid_ttc,
+            'total_pending_ht': total_pending_ht,
+            'total_pending_ttc': total_pending_ttc,
+            'paid_count': len(paid_invoices),
+            'pending_count': len(pending_invoices)
+        }
+    })
+
+
+@app.route('/api/client/invoices')
+@login_required
+@client_required
+def get_client_invoices():
+    """Récupère la liste des factures du client"""
+    client_id = current_user.client_id
+
+    if not client_id:
+        return jsonify({'error': 'Client non configuré'}), 400
+
+    # Paramètres de filtrage
+    status = request.args.get('status')  # 'paid', 'pending', ou None pour toutes
+    search = request.args.get('search', '').lower()
+
+    # Construire la requête
+    query = {'shipper': client_id}
+    if status == 'paid':
+        query['payment_status'] = 'paid'
+    elif status == 'pending':
+        query['payment_status'] = {'$ne': 'paid'}
+
+    # Récupérer les factures
+    invoices = list(invoice_history_collection.find(query).sort('created_at', -1))
+
+    # Filtrer par recherche si nécessaire
+    if search:
+        invoices = [
+            inv for inv in invoices
+            if search in inv.get('invoice_number', '').lower()
+            or search in inv.get('period', '').lower()
+        ]
+
+    # Formatter les données pour le frontend
+    formatted_invoices = []
+    for inv in invoices:
+        formatted_invoices.append({
+            'id': inv.get('id'),
+            'invoice_number': inv.get('invoice_number', ''),
+            'period': inv.get('period', ''),
+            'created_at': inv.get('created_at').isoformat() if inv.get('created_at') else None,
+            'total_ht': inv.get('total_ht', 0),
+            'total_ttc': inv.get('total_ttc', 0),
+            'total_ht_formatted': inv.get('total_ht_formatted', ''),
+            'total_ttc_formatted': inv.get('total_ttc_formatted', ''),
+            'payment_status': inv.get('payment_status', 'pending'),
+            'email_sent': inv.get('email_sent', False),
+            'batch_id': inv.get('batch_id'),
+            'filename': inv.get('filename')
+        })
+
+    return jsonify({
+        'success': True,
+        'invoices': formatted_invoices,
+        'total': len(formatted_invoices)
+    })
+
+
+@app.route('/api/client/invoices/<invoice_id>/download')
+@login_required
+@client_required
+def download_client_invoice(invoice_id):
+    """Télécharge une facture du client"""
+    client_id = current_user.client_id
+
+    if not client_id:
+        return jsonify({'error': 'Client non configuré'}), 400
+
+    # Trouver la facture - IMPORTANT: vérifier qu'elle appartient au client
+    invoice = invoice_history_collection.find_one({
+        'id': invoice_id,
+        'shipper': client_id  # Sécurité: ne peut télécharger que ses propres factures
+    })
+
+    if not invoice:
+        return jsonify({'error': 'Facture non trouvée'}), 404
+
+    batch_id = invoice.get('batch_id')
+    filename = invoice.get('filename')
+
+    if not batch_id or not filename:
+        return jsonify({'error': 'Informations de fichier manquantes'}), 400
+
+    batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
+    filepath = os.path.join(batch_folder, filename)
+
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'Fichier PDF non trouvé'}), 404
+
+    return send_file(filepath, as_attachment=True, download_name=filename)
+
+
+@app.route('/api/client/profile')
+@login_required
+@client_required
+def get_client_profile():
+    """Récupère le profil du client"""
+    client_id = current_user.client_id
+
+    if not client_id:
+        return jsonify({'error': 'Client non configuré'}), 400
+
+    client_info = clients_collection.find_one({'_id': client_id})
+
+    if not client_info:
+        return jsonify({'error': 'Informations client non trouvées'}), 404
+
+    return jsonify({
+        'success': True,
+        'profile': {
+            'name': client_info.get('nom', client_id),
+            'email': client_info.get('email', ''),
+            'siret': client_info.get('siret', ''),
+            'adresse': client_info.get('adresse', ''),
+            'code_postal': client_info.get('code_postal', ''),
+            'ville': client_info.get('ville', ''),
+            'pays': client_info.get('pays', 'France')
+        }
+    })
+
+
+@app.route('/api/clients/<client_name>/account-status')
+@login_required
+@admin_required
+def get_client_account_status(client_name):
+    """Vérifie si un client a un compte utilisateur"""
+
+    # Vérifier si un compte existe pour ce client
+    client_account = users_collection.find_one({
+        'client_id': client_name,
+        'role': 'client'
+    })
+
+    if client_account:
+        return jsonify({
+            'success': True,
+            'has_account': True,
+            'account': {
+                'email': client_account.get('email'),
+                'name': client_account.get('name'),
+                'created_at': client_account.get('created_at').isoformat() if client_account.get('created_at') else None,
+                'last_login': client_account.get('last_login').isoformat() if client_account.get('last_login') else None
+            }
+        })
+
+    return jsonify({
+        'success': True,
+        'has_account': False
+    })
 
 
 if __name__ == '__main__':

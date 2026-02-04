@@ -841,9 +841,19 @@ function renderClients(clients) {
                 <div class="client-status ${isComplete && hasEmail ? 'complete' : 'incomplete'}">
                     ${isComplete && hasEmail ? '✓ Complet' : '⚠ Informations manquantes'}
                 </div>
+                <div class="client-account-section" data-client-key="${safeKey}">
+                    <div class="client-account-status" id="account-status-${safeKey}">
+                        <span class="loading-small">Chargement...</span>
+                    </div>
+                </div>
             </div>
         `;
     }).join('');
+
+    // Check account status for each client
+    Object.keys(clients).forEach(key => {
+        checkClientAccountStatus(key);
+    });
 
     // Attach event listeners for edit/delete buttons
     clientsGrid.querySelectorAll('[data-action="edit"]').forEach(btn => {
@@ -903,6 +913,201 @@ window.deleteClient = async function(key) {
         showToast('Erreur lors de la suppression', 'error');
     }
 };
+
+// ============================================================================
+// Client Account Management
+// ============================================================================
+
+let currentClientKey = null;
+const createClientAccountModal = document.getElementById('create-client-account-modal');
+
+// Check if a client has an account
+async function checkClientAccountStatus(clientKey) {
+    const safeKey = encodeURIComponent(clientKey);
+    const statusDiv = document.getElementById(`account-status-${safeKey}`);
+
+    if (!statusDiv) return;
+
+    try {
+        const response = await fetch(`/api/clients/${safeKey}/account-status`);
+        const data = await response.json();
+
+        if (data.success) {
+            if (data.has_account) {
+                const lastLogin = data.account.last_login
+                    ? new Date(data.account.last_login).toLocaleDateString('fr-FR')
+                    : 'Jamais';
+                statusDiv.innerHTML = `
+                    <div class="account-active">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                        <span>Espace client actif</span>
+                    </div>
+                    <small class="account-info-text">Dernière connexion: ${lastLogin}</small>
+                `;
+            } else {
+                statusDiv.innerHTML = `
+                    <button class="btn btn-sm btn-client-account" data-action="create-account" data-key="${safeKey}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="8.5" cy="7" r="4"></circle>
+                            <line x1="20" y1="8" x2="20" y2="14"></line>
+                            <line x1="23" y1="11" x2="17" y2="11"></line>
+                        </svg>
+                        Créer espace client
+                    </button>
+                `;
+                // Add event listener
+                const btn = statusDiv.querySelector('[data-action="create-account"]');
+                if (btn) {
+                    btn.addEventListener('click', () => openCreateAccountModal(clientKey));
+                }
+            }
+        }
+    } catch (error) {
+        statusDiv.innerHTML = '<span class="error-text">Erreur</span>';
+    }
+}
+
+// Open the create account modal
+async function openCreateAccountModal(clientKey) {
+    currentClientKey = clientKey;
+
+    // Reset modal state
+    document.getElementById('client-account-info').classList.remove('hidden');
+    document.getElementById('client-account-result').classList.add('hidden');
+    document.getElementById('btn-create-client-account').classList.remove('hidden');
+    document.getElementById('btn-cancel-client-account').textContent = 'Annuler';
+    document.getElementById('send-welcome-email').checked = true;
+
+    // Get client info
+    try {
+        const response = await fetch('/api/clients');
+        const clients = await response.json();
+        const client = clients[clientKey];
+
+        if (client) {
+            document.getElementById('account-client-name').textContent = client.nom || clientKey;
+            document.getElementById('account-client-email').textContent = client.email || 'Non renseigné';
+
+            if (!client.email || !client.email.includes('@')) {
+                document.getElementById('btn-create-client-account').disabled = true;
+                document.getElementById('client-account-info').innerHTML += `
+                    <div class="alert alert-warning">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                        <span>Ce client n'a pas d'adresse email valide. Veuillez d'abord modifier les informations du client.</span>
+                    </div>
+                `;
+            } else {
+                document.getElementById('btn-create-client-account').disabled = false;
+            }
+        }
+    } catch (error) {
+        showToast('Erreur lors du chargement des informations client', 'error');
+        return;
+    }
+
+    createClientAccountModal.classList.remove('hidden');
+}
+
+// Close the create account modal
+function closeCreateAccountModal() {
+    createClientAccountModal.classList.add('hidden');
+    currentClientKey = null;
+}
+
+// Create client account
+async function createClientAccount() {
+    if (!currentClientKey) return;
+
+    const sendWelcome = document.getElementById('send-welcome-email').checked;
+    const btn = document.getElementById('btn-create-client-account');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-small"></span> Création en cours...';
+
+    try {
+        const response = await fetch(`/api/clients/${encodeURIComponent(currentClientKey)}/create-account`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                send_welcome_email: sendWelcome
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            // Show success
+            document.getElementById('client-account-info').classList.add('hidden');
+            document.getElementById('client-account-result').classList.remove('hidden');
+            document.getElementById('btn-create-client-account').classList.add('hidden');
+            document.getElementById('btn-cancel-client-account').textContent = 'Fermer';
+
+            document.getElementById('result-email').textContent = data.email;
+
+            if (data.temp_password) {
+                document.getElementById('result-password').textContent = data.temp_password;
+                document.getElementById('account-credentials').classList.remove('hidden');
+            } else {
+                document.getElementById('account-credentials').classList.add('hidden');
+            }
+
+            if (data.email_sent) {
+                document.getElementById('email-sent-notice').classList.remove('hidden');
+            } else {
+                document.getElementById('email-sent-notice').classList.add('hidden');
+            }
+
+            showToast('Compte client créé avec succès', 'success');
+
+            // Refresh the client list to update the account status
+            loadClients();
+        } else {
+            showToast(data.error || 'Erreur lors de la création du compte', 'error');
+            btn.disabled = false;
+            btn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="8.5" cy="7" r="4"></circle>
+                    <line x1="20" y1="8" x2="20" y2="14"></line>
+                    <line x1="23" y1="11" x2="17" y2="11"></line>
+                </svg>
+                Créer le compte
+            `;
+        }
+    } catch (error) {
+        showToast('Erreur lors de la création du compte', 'error');
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="8.5" cy="7" r="4"></circle>
+                <line x1="20" y1="8" x2="20" y2="14"></line>
+                <line x1="23" y1="11" x2="17" y2="11"></line>
+            </svg>
+            Créer le compte
+        `;
+    }
+}
+
+// Event listeners for client account modal
+if (createClientAccountModal) {
+    document.getElementById('client-account-modal-close').addEventListener('click', closeCreateAccountModal);
+    document.getElementById('btn-cancel-client-account').addEventListener('click', closeCreateAccountModal);
+    document.getElementById('btn-create-client-account').addEventListener('click', createClientAccount);
+
+    // Close on backdrop click
+    createClientAccountModal.querySelector('.modal-backdrop').addEventListener('click', closeCreateAccountModal);
+}
 
 // Add new client
 document.getElementById('btn-add-client').addEventListener('click', () => {

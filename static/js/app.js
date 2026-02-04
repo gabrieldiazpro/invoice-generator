@@ -842,18 +842,11 @@ function renderClients(clients) {
                     ${isComplete && hasEmail ? '✓ Complet' : '⚠ Informations manquantes'}
                 </div>
                 <div class="client-account-section" data-client-key="${safeKey}">
-                    <div class="client-account-status" id="account-status-${safeKey}">
-                        <span class="loading-small">Chargement...</span>
-                    </div>
+                    ${renderAccountStatus(key, client.account_status, safeKey)}
                 </div>
             </div>
         `;
     }).join('');
-
-    // Check account status for each client
-    Object.keys(clients).forEach(key => {
-        checkClientAccountStatus(key);
-    });
 
     // Attach event listeners for edit/delete buttons
     clientsGrid.querySelectorAll('[data-action="edit"]').forEach(btn => {
@@ -867,6 +860,14 @@ function renderClients(clients) {
         btn.addEventListener('click', () => {
             const key = decodeURIComponent(btn.dataset.key);
             deleteClient(key);
+        });
+    });
+
+    // Attach event listeners for create account buttons
+    clientsGrid.querySelectorAll('[data-action="create-account"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const clientKey = btn.dataset.clientKey;
+            openCreateAccountModal(clientKey);
         });
     });
 }
@@ -921,53 +922,38 @@ window.deleteClient = async function(key) {
 let currentClientKey = null;
 const createClientAccountModal = document.getElementById('create-client-account-modal');
 
-// Check if a client has an account
-async function checkClientAccountStatus(clientKey) {
-    const safeKey = encodeURIComponent(clientKey);
-    const statusDiv = document.getElementById(`account-status-${safeKey}`);
+// Render account status directly (no API call needed)
+function renderAccountStatus(clientKey, accountStatus, safeKey) {
+    if (!accountStatus) {
+        return '<span class="error-text">Statut inconnu</span>';
+    }
 
-    if (!statusDiv) return;
-
-    try {
-        const response = await fetch(`/api/clients/${safeKey}/account-status`);
-        const data = await response.json();
-
-        if (data.success) {
-            if (data.has_account) {
-                const lastLogin = data.account.last_login
-                    ? new Date(data.account.last_login).toLocaleDateString('fr-FR')
-                    : 'Jamais';
-                statusDiv.innerHTML = `
-                    <div class="account-active">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                        </svg>
-                        <span>Espace client actif</span>
-                    </div>
-                    <small class="account-info-text">Dernière connexion: ${lastLogin}</small>
-                `;
-            } else {
-                statusDiv.innerHTML = `
-                    <button class="btn btn-sm btn-client-account" data-action="create-account" data-key="${safeKey}">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="8.5" cy="7" r="4"></circle>
-                            <line x1="20" y1="8" x2="20" y2="14"></line>
-                            <line x1="23" y1="11" x2="17" y2="11"></line>
-                        </svg>
-                        Créer espace client
-                    </button>
-                `;
-                // Add event listener
-                const btn = statusDiv.querySelector('[data-action="create-account"]');
-                if (btn) {
-                    btn.addEventListener('click', () => openCreateAccountModal(clientKey));
-                }
-            }
-        }
-    } catch (error) {
-        statusDiv.innerHTML = '<span class="error-text">Erreur</span>';
+    if (accountStatus.has_account) {
+        const lastLogin = accountStatus.last_login
+            ? new Date(accountStatus.last_login).toLocaleDateString('fr-FR')
+            : 'Jamais';
+        return `
+            <div class="account-active">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                <span>Espace client actif</span>
+            </div>
+            <small class="account-info-text">Dernière connexion: ${lastLogin}</small>
+        `;
+    } else {
+        return `
+            <button class="btn btn-sm btn-client-account" data-action="create-account" data-key="${safeKey}" data-client-key="${escapeHtml(clientKey)}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="8.5" cy="7" r="4"></circle>
+                    <line x1="20" y1="8" x2="20" y2="14"></line>
+                    <line x1="23" y1="11" x2="17" y2="11"></line>
+                </svg>
+                Créer espace client
+            </button>
+        `;
     }
 }
 

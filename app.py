@@ -2582,8 +2582,35 @@ def send_all_reminders(reminder_type):
 @app.route('/api/clients', methods=['GET'])
 @login_required
 def get_clients():
-    """Récupère la liste des clients"""
+    """Récupère la liste des clients avec statut des comptes"""
     clients = load_clients_config()
+
+    # Pour les admins, ajouter le statut des comptes clients
+    if current_user.is_admin():
+        # Récupérer tous les comptes clients en une seule requête
+        client_accounts = list(users_collection.find(
+            {'role': 'client'},
+            {'client_id': 1, 'email': 1, 'last_login': 1, 'created_at': 1}
+        ))
+
+        # Créer un dictionnaire pour accès rapide
+        accounts_by_client = {
+            acc['client_id']: {
+                'has_account': True,
+                'email': acc.get('email'),
+                'last_login': acc.get('last_login').isoformat() if acc.get('last_login') else None,
+                'created_at': acc.get('created_at').isoformat() if acc.get('created_at') else None
+            }
+            for acc in client_accounts if acc.get('client_id')
+        }
+
+        # Ajouter le statut à chaque client
+        for client_key in clients:
+            if client_key in accounts_by_client:
+                clients[client_key]['account_status'] = accounts_by_client[client_key]
+            else:
+                clients[client_key]['account_status'] = {'has_account': False}
+
     return jsonify(clients)
 
 

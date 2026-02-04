@@ -3023,6 +3023,41 @@ def download_client_invoice(invoice_id):
     return send_file(filepath, as_attachment=True, download_name=filename)
 
 
+@app.route('/api/client/invoices/<invoice_id>/view')
+@login_required
+@client_required
+def view_client_invoice(invoice_id):
+    """Affiche une facture du client dans le navigateur"""
+    client_id = current_user.client_id
+
+    if not client_id:
+        return jsonify({'error': 'Client non configuré'}), 400
+
+    # Trouver la facture - IMPORTANT: vérifier qu'elle appartient au client
+    invoice = invoice_history_collection.find_one({
+        'id': invoice_id,
+        'shipper': client_id  # Sécurité: ne peut voir que ses propres factures
+    })
+
+    if not invoice:
+        return jsonify({'error': 'Facture non trouvée'}), 404
+
+    batch_id = invoice.get('batch_id')
+    filename = invoice.get('filename')
+
+    if not batch_id or not filename:
+        return jsonify({'error': 'Informations de fichier manquantes'}), 400
+
+    batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
+    filepath = os.path.join(batch_folder, filename)
+
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'Fichier PDF non trouvé'}), 404
+
+    # Ouvrir dans le navigateur (inline) au lieu de télécharger
+    return send_file(filepath, as_attachment=False, mimetype='application/pdf')
+
+
 @app.route('/api/client/profile')
 @login_required
 @client_required

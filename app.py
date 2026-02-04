@@ -118,9 +118,9 @@ app.config.update(
 try:
     from flask_compress import Compress
     Compress(app)
-    logger.info("Compression GZIP activée")
+    print("Compression GZIP activée")
 except ImportError:
-    logger.info("flask-compress non installé - compression désactivée")
+    print("flask-compress non installé - compression désactivée")
 
 # Setup logging
 logger = setup_logging(app)

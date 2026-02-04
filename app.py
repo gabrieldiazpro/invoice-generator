@@ -653,6 +653,33 @@ def get_user_sender_info():
 
 init_super_admin()
 
+
+def init_db_indexes():
+    """Crée les index MongoDB pour de meilleures performances"""
+    if db is None:
+        return
+    try:
+        # Index sur invoice_history pour les requêtes fréquentes
+        invoice_history_collection.create_index('created_at')
+        invoice_history_collection.create_index('shipper')
+        invoice_history_collection.create_index('payment_status')
+        invoice_history_collection.create_index('id')
+
+        # Index sur users
+        users_collection.create_index('email', unique=True)
+        users_collection.create_index('client_id')
+        users_collection.create_index('role')
+
+        # Index sur clients
+        clients_collection.create_index('email')
+
+        logger.info("Index MongoDB créés avec succès")
+    except Exception as e:
+        logger.warning(f"Impossible de créer les index MongoDB: {e}")
+
+
+init_db_indexes()
+
 ALLOWED_EXTENSIONS = {'csv'}
 EMAIL_CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'email_config.json')
 INVOICE_HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'invoice_history.json')
@@ -1038,9 +1065,12 @@ def save_email_config(config):
     email_config_collection.replace_one({'_id': 'main'}, config_copy, upsert=True)
 
 
-def load_invoice_history():
-    """Charge l'historique des factures depuis MongoDB"""
-    history = list(invoice_history_collection.find().sort('created_at', -1))
+def load_invoice_history(limit=100):
+    """Charge l'historique des factures depuis MongoDB (limité par défaut)"""
+    query = invoice_history_collection.find().sort('created_at', -1)
+    if limit:
+        query = query.limit(limit)
+    history = list(query)
     if history:
         for h in history:
             h['_id'] = str(h['_id']) if '_id' in h else h.get('id')
@@ -2334,11 +2364,12 @@ def create_html_email_preview(body_text, invoice_data, email_type='invoice'):
 @login_required
 def get_invoice_history():
     """Récupère l'historique des factures"""
-    history = load_invoice_history()
-
     # Paramètres de filtrage optionnels
     search = request.args.get('search', '').lower()
-    limit = request.args.get('limit', type=int)
+    limit = request.args.get('limit', 100, type=int)  # Limite par défaut à 100
+
+    # Charger avec limite
+    history = load_invoice_history(limit=limit if not search else 500)
 
     if search:
         history = [
@@ -2346,10 +2377,7 @@ def get_invoice_history():
             if search in h.get('invoice_number', '').lower()
             or search in h.get('client_name', '').lower()
             or search in h.get('shipper', '').lower()
-        ]
-
-    if limit:
-        history = history[:limit]
+        ][:limit]
 
     return jsonify({
         'success': True,

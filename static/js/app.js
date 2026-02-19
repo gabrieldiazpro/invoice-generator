@@ -1195,6 +1195,10 @@ function setupImportClientsEvents() {
 // Initialize import events when DOM is ready
 setupImportClientsEvents();
 
+// Store current import file for re-submission
+let currentImportFile = null;
+let currentDuplicates = [];
+
 async function handleClientsImport(file) {
     const validExtensions = ['.csv', '.xlsx', '.xls'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
@@ -1204,16 +1208,20 @@ async function handleClientsImport(file) {
         return;
     }
 
+    currentImportFile = file;
+
     // Show progress
     document.getElementById('import-info').classList.add('hidden');
     document.getElementById('import-progress').classList.remove('hidden');
     document.getElementById('import-results').classList.add('hidden');
-    document.getElementById('import-progress-text').textContent = 'Import en cours...';
+    const duplicatesSection = document.getElementById('import-duplicates');
+    if (duplicatesSection) duplicatesSection.classList.add('hidden');
+    document.getElementById('import-progress-text').textContent = 'Analyse en cours...';
     document.getElementById('import-progress-fill').style.width = '50%';
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('update_existing', document.getElementById('import-update-existing')?.checked ? 'true' : 'false');
+    formData.append('mode', 'auto');
 
     try {
         const response = await fetch('/api/clients/import', {
@@ -1224,6 +1232,19 @@ async function handleClientsImport(file) {
         const data = await response.json();
 
         document.getElementById('import-progress-fill').style.width = '100%';
+
+        // Check if duplicates need confirmation
+        if (data.success && data.needs_confirmation) {
+            currentDuplicates = data.duplicates;
+            document.getElementById('import-progress-text').textContent = 'Doublons détectés';
+
+            setTimeout(() => {
+                document.getElementById('import-progress').classList.add('hidden');
+                showDuplicatesModal(data.duplicates, data.new_count);
+            }, 500);
+            return;
+        }
+
         document.getElementById('import-progress-text').textContent = 'Terminé';
 
         // Show results after short delay
@@ -1294,6 +1315,161 @@ async function handleClientsImport(file) {
         document.getElementById('import-results-summary').innerHTML = `
             <div class="import-error-message">
                 <p>Erreur lors de l'import: ${error.message}</p>
+            </div>
+        `;
+        showToast('Erreur lors de l\'import', 'error');
+    }
+}
+
+function showDuplicatesModal(duplicates, newCount) {
+    const duplicatesSection = document.getElementById('import-duplicates');
+    if (!duplicatesSection) {
+        // Créer la section si elle n'existe pas
+        const resultsSection = document.getElementById('import-results');
+        const newSection = document.createElement('div');
+        newSection.id = 'import-duplicates';
+        newSection.className = 'import-duplicates';
+        resultsSection.parentNode.insertBefore(newSection, resultsSection);
+    }
+
+    const section = document.getElementById('import-duplicates');
+    section.classList.remove('hidden');
+
+    section.innerHTML = `
+        <div class="duplicates-header">
+            <h4>Clients existants détectés (${duplicates.length})</h4>
+            <p>${newCount} nouveau(x) client(s) seront ajoutés automatiquement.</p>
+            <p>Pour chaque doublon, choisissez l'action à effectuer :</p>
+        </div>
+        <div class="duplicates-actions-all">
+            <button class="btn btn-sm btn-secondary" onclick="setAllDuplicateActions('skip')">Tout ignorer</button>
+            <button class="btn btn-sm btn-primary" onclick="setAllDuplicateActions('update')">Tout mettre à jour</button>
+        </div>
+        <div class="duplicates-list">
+            ${duplicates.map((dup, index) => `
+                <div class="duplicate-item" data-nom="${encodeURIComponent(dup.nom)}">
+                    <div class="duplicate-info">
+                        <div class="duplicate-name">${dup.nom}</div>
+                        <div class="duplicate-comparison">
+                            <div class="duplicate-existing">
+                                <span class="label">Existant:</span>
+                                <span class="value">${dup.existing_data.email || 'Pas d\'email'} | ${dup.existing_data.siret || 'Pas de SIRET'}</span>
+                            </div>
+                            <div class="duplicate-new">
+                                <span class="label">Import:</span>
+                                <span class="value">${dup.new_data.email || 'Pas d\'email'} | ${dup.new_data.siret || 'Pas de SIRET'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="duplicate-actions">
+                        <select class="duplicate-action-select" data-nom="${encodeURIComponent(dup.nom)}">
+                            <option value="skip" selected>Garder l'ancien</option>
+                            <option value="update">Mettre à jour</option>
+                            <option value="add">Ajouter comme nouveau</option>
+                        </select>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        <div class="duplicates-footer">
+            <button class="btn btn-secondary" onclick="cancelImport()">Annuler</button>
+            <button class="btn btn-primary" onclick="confirmImportWithDecisions()">Confirmer l'import</button>
+        </div>
+    `;
+}
+
+function setAllDuplicateActions(action) {
+    document.querySelectorAll('.duplicate-action-select').forEach(select => {
+        select.value = action;
+    });
+}
+
+function cancelImport() {
+    currentImportFile = null;
+    currentDuplicates = [];
+    document.getElementById('import-duplicates')?.classList.add('hidden');
+    document.getElementById('import-info').classList.remove('hidden');
+}
+
+async function confirmImportWithDecisions() {
+    if (!currentImportFile) {
+        showToast('Erreur: fichier non disponible', 'error');
+        return;
+    }
+
+    // Collecter les décisions
+    const decisions = {};
+    document.querySelectorAll('.duplicate-action-select').forEach(select => {
+        const nom = decodeURIComponent(select.dataset.nom);
+        decisions[nom] = select.value;
+    });
+
+    // Afficher la progression
+    document.getElementById('import-duplicates').classList.add('hidden');
+    document.getElementById('import-progress').classList.remove('hidden');
+    document.getElementById('import-progress-text').textContent = 'Import en cours...';
+    document.getElementById('import-progress-fill').style.width = '50%';
+
+    const formData = new FormData();
+    formData.append('file', currentImportFile);
+    formData.append('mode', 'confirm');
+    formData.append('decisions', JSON.stringify(decisions));
+
+    try {
+        const response = await fetch('/api/clients/import', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        document.getElementById('import-progress-fill').style.width = '100%';
+        document.getElementById('import-progress-text').textContent = 'Terminé';
+
+        setTimeout(() => {
+            document.getElementById('import-progress').classList.add('hidden');
+            document.getElementById('import-results').classList.remove('hidden');
+
+            if (data.success) {
+                const results = data.results;
+                document.getElementById('import-results-summary').innerHTML = `
+                    <div class="import-summary-stats">
+                        <div class="import-stat success">
+                            <span class="import-stat-value">${results.created}</span>
+                            <span class="import-stat-label">Créés</span>
+                        </div>
+                        <div class="import-stat info">
+                            <span class="import-stat-value">${results.updated}</span>
+                            <span class="import-stat-label">Mis à jour</span>
+                        </div>
+                        <div class="import-stat warning">
+                            <span class="import-stat-value">${results.skipped}</span>
+                            <span class="import-stat-label">Ignorés</span>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('import-results-details').innerHTML = '';
+                showToast(data.message, 'success');
+                loadClients();
+            } else {
+                document.getElementById('import-results-summary').innerHTML = `
+                    <div class="import-error-message">
+                        <p>${data.error}</p>
+                    </div>
+                `;
+                showToast(data.error, 'error');
+            }
+
+            currentImportFile = null;
+            currentDuplicates = [];
+        }, 500);
+
+    } catch (error) {
+        document.getElementById('import-progress').classList.add('hidden');
+        document.getElementById('import-results').classList.remove('hidden');
+        document.getElementById('import-results-summary').innerHTML = `
+            <div class="import-error-message">
+                <p>Erreur: ${error.message}</p>
             </div>
         `;
         showToast('Erreur lors de l\'import', 'error');

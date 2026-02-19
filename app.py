@@ -3336,6 +3336,81 @@ def delete_client(client_name):
     return jsonify({'success': True})
 
 
+def parse_import_file(filepath, ext):
+    """Parse un fichier d'import (CSV ou Excel) et retourne un DataFrame"""
+    import pandas as pd
+
+    if ext == 'csv':
+        df = None
+        for sep in [';', ',', '\t']:
+            for encoding in ['utf-8', 'latin-1', 'cp1252']:
+                try:
+                    df = pd.read_csv(filepath, sep=sep, encoding=encoding)
+                    if len(df.columns) > 1:
+                        break
+                except:
+                    continue
+            if df is not None and len(df.columns) > 1:
+                break
+
+        if df is None or len(df.columns) <= 1:
+            return None, "Impossible de lire le fichier CSV"
+    else:
+        df = pd.read_excel(filepath)
+        unnamed_cols = sum(1 for col in df.columns if 'unnamed' in str(col).lower())
+        if unnamed_cols > len(df.columns) / 2:
+            df = pd.read_excel(filepath, header=2)
+
+    return df, None
+
+
+def get_import_column_mappings():
+    """Retourne le mapping des colonnes pour l'import"""
+    return {
+        'nom': ['official company name', 'used customer name', 'company name', 'customer name', 'customer',
+                'nom', 'name', 'raison_sociale', 'raison sociale', 'société', 'societe', 'client', 'shipper'],
+        'adresse': ['billing address', 'adresse', 'address', 'rue', 'street'],
+        'code_postal': ['code_postal', 'cp', 'postal_code', 'zip', 'zipcode', 'code postal'],
+        'ville': ['ville', 'city', 'town'],
+        'pays': ['pays', 'country'],
+        'email': ['billing email address', 'email', 'mail', 'e-mail', 'courriel'],
+        'siret': ['siret', 'numero de siret', 'siren', 'numero_siret', 'n° siret', 'n siret']
+    }
+
+
+def extract_client_from_row(row, found_columns):
+    """Extrait les données client d'une ligne du fichier"""
+    nom_col = found_columns['nom']
+    nom = str(row.get(nom_col, '')).strip()
+
+    if not nom or nom == 'nan':
+        return None, None
+
+    # Construire les données du client
+    def get_value(field, default=''):
+        if field not in found_columns:
+            return default
+        val = str(row.get(found_columns[field], '')).strip()
+        return default if val == 'nan' else val
+
+    client_data = {
+        '_id': nom,
+        'nom': nom,
+        'adresse': get_value('adresse', 'Adresse à compléter'),
+        'code_postal': get_value('code_postal', '00000'),
+        'ville': get_value('ville', 'Ville'),
+        'pays': get_value('pays', 'France'),
+        'email': get_value('email', 'email@example.com'),
+        'siret': get_value('siret', '00000000000000')
+    }
+
+    # Nettoyer le SIRET
+    siret = ''.join(c for c in client_data['siret'] if c.isdigit())
+    client_data['siret'] = siret[:14] if len(siret) > 14 else (siret if siret else '00000000000000')
+
+    return nom, client_data
+
+
 @app.route('/api/clients/import', methods=['POST'])
 @login_required
 def import_clients():
@@ -3353,7 +3428,13 @@ def import_clients():
     if ext not in ['csv', 'xlsx', 'xls']:
         return jsonify({'error': 'Format non supporté. Utilisez CSV ou Excel (.xlsx, .xls)'}), 400
 
-    update_existing = request.form.get('update_existing', 'true').lower() == 'true'
+    # Mode: 'preview' pour détecter les doublons, 'confirm' pour importer avec décisions
+    mode = request.form.get('mode', 'auto')
+    decisions_json = request.form.get('decisions', '{}')
+    try:
+        decisions = json.loads(decisions_json)  # {nom: 'add'|'update'|'skip'}
+    except:
+        decisions = {}
 
     # Sauvegarder temporairement le fichier
     unique_filename = f"{uuid.uuid4().hex}_{filename}"
@@ -3361,52 +3442,16 @@ def import_clients():
     file.save(filepath)
 
     try:
-        # Lire le fichier selon le format
-        if ext == 'csv':
-            import pandas as pd
-            # Essayer plusieurs séparateurs et encodages
-            df = None
-            for sep in [';', ',', '\t']:
-                for encoding in ['utf-8', 'latin-1', 'cp1252']:
-                    try:
-                        df = pd.read_csv(filepath, sep=sep, encoding=encoding)
-                        if len(df.columns) > 1:
-                            break
-                    except:
-                        continue
-                if df is not None and len(df.columns) > 1:
-                    break
+        df, error = parse_import_file(filepath, ext)
+        if error:
+            os.remove(filepath)
+            return jsonify({'error': error}), 400
 
-            if df is None or len(df.columns) <= 1:
-                return jsonify({'error': 'Impossible de lire le fichier CSV'}), 400
-        else:
-            import pandas as pd
-            # Essayer de lire avec différentes lignes d'en-tête
-            df = pd.read_excel(filepath)
-
-            # Vérifier si les colonnes sont "Unnamed" (en-têtes pas sur la première ligne)
-            unnamed_cols = sum(1 for col in df.columns if 'unnamed' in str(col).lower())
-            if unnamed_cols > len(df.columns) / 2:
-                # Essayer avec header sur ligne 2 (format "Liste client.xlsx")
-                df = pd.read_excel(filepath, header=2)
-
-        # Mapping des colonnes (insensible à la casse, avec alternatives)
-        # Supporte le format "Liste client.xlsx" de Peoples Post
-        column_mappings = {
-            'nom': ['official company name', 'used customer name', 'company name', 'customer name', 'customer',
-                    'nom', 'name', 'raison_sociale', 'raison sociale', 'société', 'societe', 'client', 'shipper'],
-            'adresse': ['billing address', 'adresse', 'address', 'rue', 'street'],
-            'code_postal': ['code_postal', 'cp', 'postal_code', 'zip', 'zipcode', 'code postal'],
-            'ville': ['ville', 'city', 'town'],
-            'pays': ['pays', 'country'],
-            'email': ['billing email address', 'email', 'mail', 'e-mail', 'courriel'],
-            'siret': ['siret', 'numero de siret', 'siren', 'numero_siret', 'n° siret', 'n siret']
-        }
-
-        # Normaliser les noms de colonnes
+        # Normaliser les colonnes
         df.columns = [str(col).lower().strip() for col in df.columns]
 
-        # Créer un mapping des colonnes du fichier vers les colonnes attendues
+        # Mapper les colonnes
+        column_mappings = get_import_column_mappings()
         found_columns = {}
         for target_col, variants in column_mappings.items():
             for variant in variants:
@@ -3414,98 +3459,91 @@ def import_clients():
                     found_columns[target_col] = variant
                     break
 
-        # Vérifier que la colonne nom est présente
         if 'nom' not in found_columns:
+            os.remove(filepath)
             return jsonify({
                 'error': 'Colonne "nom" non trouvée. Colonnes détectées: ' + ', '.join(df.columns.tolist())
             }), 400
 
-        # Traiter les données
+        # Analyser les données et détecter les doublons
+        duplicates = []
+        new_clients = []
+
+        for index, row in df.iterrows():
+            nom, client_data = extract_client_from_row(row, found_columns)
+            if not nom:
+                continue
+
+            existing = clients_collection.find_one({'_id': nom})
+            if existing:
+                duplicates.append({
+                    'nom': nom,
+                    'new_data': client_data,
+                    'existing_data': {k: v for k, v in existing.items() if k != '_id'}
+                })
+            else:
+                new_clients.append(client_data)
+
+        # Mode preview ou auto avec doublons: retourner les doublons pour confirmation
+        if mode == 'preview' or (mode == 'auto' and duplicates and not decisions):
+            os.remove(filepath)
+            return jsonify({
+                'success': True,
+                'needs_confirmation': True,
+                'duplicates': duplicates,
+                'new_count': len(new_clients),
+                'duplicate_count': len(duplicates)
+            })
+
+        # Mode confirm ou auto sans doublons: procéder à l'import
         results = {
-            'total': 0,
+            'total': len(new_clients) + len(duplicates),
             'created': 0,
             'updated': 0,
             'skipped': 0,
             'errors': []
         }
 
-        for index, row in df.iterrows():
-            results['total'] += 1
-
-            # Récupérer le nom (requis)
-            nom_col = found_columns['nom']
-            nom = str(row.get(nom_col, '')).strip()
-
-            if not nom or nom == 'nan':
-                results['skipped'] += 1
-                results['errors'].append({
-                    'row': index + 2,
-                    'error': 'Nom manquant'
-                })
-                continue
-
-            # Vérifier si le client existe déjà
-            existing = clients_collection.find_one({'_id': nom})
-
-            if existing and not update_existing:
-                results['skipped'] += 1
-                continue
-
-            # Construire les données du client
-            client_data = {
-                '_id': nom,
-                'nom': nom,
-                'adresse': str(row.get(found_columns.get('adresse', ''), '')).strip() if found_columns.get('adresse') else 'Adresse à compléter',
-                'code_postal': str(row.get(found_columns.get('code_postal', ''), '')).strip() if found_columns.get('code_postal') else '00000',
-                'ville': str(row.get(found_columns.get('ville', ''), '')).strip() if found_columns.get('ville') else 'Ville',
-                'pays': str(row.get(found_columns.get('pays', ''), '')).strip() if found_columns.get('pays') else 'France',
-                'email': str(row.get(found_columns.get('email', ''), '')).strip() if found_columns.get('email') else 'email@example.com',
-                'siret': str(row.get(found_columns.get('siret', ''), '')).strip() if found_columns.get('siret') else '00000000000000'
-            }
-
-            # Nettoyer les valeurs 'nan'
-            for key in client_data:
-                if client_data[key] == 'nan':
-                    if key == 'pays':
-                        client_data[key] = 'France'
-                    elif key == 'code_postal':
-                        client_data[key] = '00000'
-                    elif key == 'siret':
-                        client_data[key] = '00000000000000'
-                    elif key == 'email':
-                        client_data[key] = 'email@example.com'
-                    elif key == 'adresse':
-                        client_data[key] = 'Adresse à compléter'
-                    elif key == 'ville':
-                        client_data[key] = 'Ville'
-
-            # Nettoyer le SIRET (garder seulement les chiffres)
-            siret = ''.join(c for c in client_data['siret'] if c.isdigit())
-            if len(siret) > 14:
-                siret = siret[:14]
-            client_data['siret'] = siret if siret else '00000000000000'
-
-            # Sauvegarder dans MongoDB
+        # Importer les nouveaux clients
+        for client_data in new_clients:
             try:
-                clients_collection.replace_one({'_id': nom}, client_data, upsert=True)
-                if existing:
-                    results['updated'] += 1
-                else:
-                    results['created'] += 1
+                clients_collection.replace_one({'_id': client_data['_id']}, client_data, upsert=True)
+                results['created'] += 1
             except Exception as e:
-                results['errors'].append({
-                    'row': index + 2,
-                    'nom': nom,
-                    'error': str(e)
-                })
+                results['errors'].append({'nom': client_data['nom'], 'error': str(e)})
 
-        # Supprimer le fichier temporaire
+        # Traiter les doublons selon les décisions
+        for dup in duplicates:
+            nom = dup['nom']
+            decision = decisions.get(nom, 'skip')  # Par défaut: ignorer
+
+            if decision == 'add':
+                # Ajouter comme nouveau (avec suffixe)
+                new_nom = f"{nom} (import)"
+                client_data = dup['new_data']
+                client_data['_id'] = new_nom
+                client_data['nom'] = new_nom
+                try:
+                    clients_collection.insert_one(client_data)
+                    results['created'] += 1
+                except:
+                    results['skipped'] += 1
+            elif decision == 'update':
+                # Mettre à jour l'existant
+                try:
+                    clients_collection.replace_one({'_id': nom}, dup['new_data'], upsert=True)
+                    results['updated'] += 1
+                except Exception as e:
+                    results['errors'].append({'nom': nom, 'error': str(e)})
+            else:  # skip
+                results['skipped'] += 1
+
         os.remove(filepath)
 
         return jsonify({
             'success': True,
             'results': results,
-            'message': f"{results['created']} client(s) créé(s), {results['updated']} mis à jour, {results['skipped']} ignoré(s)"
+            'message': f"{results['created']} créé(s), {results['updated']} mis à jour, {results['skipped']} ignoré(s)"
         })
 
     except Exception as e:

@@ -1303,6 +1303,16 @@ function renderHistory(history) {
             sendSingleReminder(id, type);
         });
     });
+
+    // Attach checkbox change listeners for bulk actions
+    tbody.querySelectorAll('.history-checkbox').forEach(cb => {
+        cb.addEventListener('change', () => {
+            updateBulkActionsBar();
+        });
+    });
+
+    // Reset bulk actions bar
+    updateBulkActionsBar();
 }
 
 function updateHistoryStats(history) {
@@ -1577,13 +1587,6 @@ if (selectAllHistory) {
         updateBulkActionsBar();
     });
 }
-
-// Listen for individual checkbox changes (event delegation)
-document.getElementById('history-tbody')?.addEventListener('change', (e) => {
-    if (e.target.classList.contains('history-checkbox')) {
-        updateBulkActionsBar();
-    }
-});
 
 // ==========================================================================
 // Bulk Actions Functions

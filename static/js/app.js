@@ -1110,11 +1110,18 @@ document.getElementById('btn-add-client').addEventListener('click', () => {
 });
 
 // Cleanup duplicate clients
-document.getElementById('btn-cleanup-duplicates')?.addEventListener('click', async () => {
-    // First check for duplicates
+async function cleanupDuplicates() {
+    console.log('Cleanup duplicates clicked');
     try {
+        showToast('Vérification des doublons...', 'info');
         const checkResponse = await fetch('/api/clients/duplicates');
         const checkData = await checkResponse.json();
+        console.log('Duplicates response:', checkData);
+
+        if (!checkData.success) {
+            showToast(checkData.error || 'Erreur API', 'error');
+            return;
+        }
 
         if (checkData.total_groups === 0) {
             showToast('Aucun doublon détecté', 'info');
@@ -1140,9 +1147,18 @@ document.getElementById('btn-cleanup-duplicates')?.addEventListener('click', asy
             showToast(data.error || 'Erreur lors du nettoyage', 'error');
         }
     } catch (error) {
+        console.error('Cleanup error:', error);
         showToast('Erreur lors de la vérification des doublons', 'error');
     }
-});
+}
+
+const btnCleanupDuplicates = document.getElementById('btn-cleanup-duplicates');
+if (btnCleanupDuplicates) {
+    btnCleanupDuplicates.addEventListener('click', cleanupDuplicates);
+    console.log('Cleanup duplicates button listener attached');
+} else {
+    console.warn('btn-cleanup-duplicates not found');
+}
 
 // Modal close
 document.getElementById('modal-close').addEventListener('click', closeModal);

@@ -810,6 +810,52 @@ function isClientComplete(client) {
     return hasValidSiret && hasValidEmail;
 }
 
+function normalizeClientName(name) {
+    if (!name) return '';
+    // Minuscules, sans accents, sans ponctuation, sans formes juridiques
+    let normalized = name.toLowerCase().trim();
+    normalized = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    normalized = normalized.replace(/[^\w\s]/g, ' ');
+    // Supprimer formes juridiques
+    const legalForms = ['sarl', 'sas', 'sa', 'eurl', 'sasu', 'sci', 'snc', 'scp'];
+    legalForms.forEach(form => {
+        normalized = normalized.replace(new RegExp('\\b' + form + '\\b', 'g'), '');
+    });
+    return normalized.replace(/\s+/g, ' ').trim();
+}
+
+function calculateClientSimilarity(name1, name2) {
+    const n1 = normalizeClientName(name1);
+    const n2 = normalizeClientName(name2);
+    if (n1 === n2) return 1.0;
+    if (n1.includes(n2) || n2.includes(n1)) {
+        return Math.min(n1.length, n2.length) / Math.max(n1.length, n2.length);
+    }
+    // Mots communs
+    const words1 = new Set(n1.split(' ').filter(w => w.length > 1));
+    const words2 = new Set(n2.split(' ').filter(w => w.length > 1));
+    const common = [...words1].filter(w => words2.has(w)).length;
+    const total = new Set([...words1, ...words2]).size;
+    return total > 0 ? common / total : 0;
+}
+
+let duplicateClientKeys = new Set();
+
+function detectDuplicates() {
+    duplicateClientKeys = new Set();
+    const keys = Object.keys(allClientsData);
+
+    for (let i = 0; i < keys.length; i++) {
+        for (let j = i + 1; j < keys.length; j++) {
+            if (calculateClientSimilarity(keys[i], keys[j]) >= 0.6) {
+                duplicateClientKeys.add(keys[i]);
+                duplicateClientKeys.add(keys[j]);
+            }
+        }
+    }
+    return duplicateClientKeys.size;
+}
+
 function applyClientsFilter() {
     const searchLower = clientsSearchTerm.toLowerCase();
 
@@ -824,10 +870,12 @@ function applyClientsFilter() {
 
         // Status filter
         const isComplete = isClientComplete(client);
+        const isDuplicate = duplicateClientKeys.has(key);
 
         const matchesFilter = clientsFilterValue === 'all' ||
             (clientsFilterValue === 'complete' && isComplete) ||
-            (clientsFilterValue === 'incomplete' && !isComplete);
+            (clientsFilterValue === 'incomplete' && !isComplete) ||
+            (clientsFilterValue === 'duplicates' && isDuplicate);
 
         return matchesSearch && matchesFilter;
     });
@@ -843,6 +891,7 @@ function updateClientsStats() {
     const total = Object.keys(allClientsData).length;
     const complete = Object.values(allClientsData).filter(c => isClientComplete(c)).length;
     const incomplete = total - complete;
+    const duplicates = detectDuplicates();
 
     statsContainer.innerHTML = `
         <div class="stat-card mini">
@@ -856,6 +905,10 @@ function updateClientsStats() {
         <div class="stat-card mini">
             <div class="stat-value" style="color: var(--color-warning)">${incomplete}</div>
             <div class="stat-label">Incomplets</div>
+        </div>
+        <div class="stat-card mini">
+            <div class="stat-value" style="color: var(--color-danger)">${duplicates}</div>
+            <div class="stat-label">Doublons</div>
         </div>
     `;
 }

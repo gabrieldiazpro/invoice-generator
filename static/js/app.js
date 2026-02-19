@@ -1109,57 +1109,6 @@ document.getElementById('btn-add-client').addEventListener('click', () => {
     clientModal.classList.remove('hidden');
 });
 
-// Cleanup duplicate clients
-async function cleanupDuplicates() {
-    console.log('Cleanup duplicates clicked');
-    try {
-        showToast('Vérification des doublons...', 'info');
-        const checkResponse = await fetch('/api/clients/duplicates');
-        const checkData = await checkResponse.json();
-        console.log('Duplicates response:', checkData);
-
-        if (!checkData.success) {
-            showToast(checkData.error || 'Erreur API', 'error');
-            return;
-        }
-
-        if (checkData.total_groups === 0) {
-            showToast('Aucun doublon détecté', 'info');
-            return;
-        }
-
-        const duplicatesList = checkData.duplicates.map(group =>
-            `• ${group.names.join(' / ')} → garder "${group.recommended_keep}"`
-        ).join('\n');
-
-        if (!confirm(`${checkData.total_groups} groupe(s) de doublons détecté(s):\n\n${duplicatesList}\n\nSupprimer automatiquement les doublons (garder le plus complet) ?`)) {
-            return;
-        }
-
-        // Cleanup
-        const response = await fetch('/api/clients/cleanup-duplicates', { method: 'POST' });
-        const data = await response.json();
-
-        if (data.success) {
-            showToast(data.message, 'success');
-            loadClients();
-        } else {
-            showToast(data.error || 'Erreur lors du nettoyage', 'error');
-        }
-    } catch (error) {
-        console.error('Cleanup error:', error);
-        showToast('Erreur lors de la vérification des doublons', 'error');
-    }
-}
-
-const btnCleanupDuplicates = document.getElementById('btn-cleanup-duplicates');
-if (btnCleanupDuplicates) {
-    btnCleanupDuplicates.addEventListener('click', cleanupDuplicates);
-    console.log('Cleanup duplicates button listener attached');
-} else {
-    console.warn('btn-cleanup-duplicates not found');
-}
-
 // Modal close
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('btn-cancel').addEventListener('click', closeModal);

@@ -1048,61 +1048,99 @@ window.deleteClient = async function(key) {
 // Client Import
 // ============================================================================
 
-const importClientsModal = document.getElementById('import-clients-modal');
-const importUploadZone = document.getElementById('import-upload-zone');
-const importClientsFile = document.getElementById('import-clients-file');
-
-// Open import modal
-document.getElementById('btn-import-clients')?.addEventListener('click', () => {
+function openImportClientsModal() {
+    const modal = document.getElementById('import-clients-modal');
+    const fileInput = document.getElementById('import-clients-file');
+    if (!modal) {
+        console.error('Import modal not found');
+        return;
+    }
     // Reset modal state
     document.getElementById('import-info').classList.remove('hidden');
     document.getElementById('import-progress').classList.add('hidden');
     document.getElementById('import-results').classList.add('hidden');
-    importClientsFile.value = '';
-    importClientsModal.classList.remove('hidden');
-});
+    if (fileInput) fileInput.value = '';
+    modal.classList.remove('hidden');
+}
 
-// Close modal handlers
-document.getElementById('import-clients-modal-close')?.addEventListener('click', () => {
-    importClientsModal.classList.add('hidden');
-});
+function closeImportClientsModal() {
+    const modal = document.getElementById('import-clients-modal');
+    if (modal) modal.classList.add('hidden');
+}
 
-document.getElementById('btn-cancel-import')?.addEventListener('click', () => {
-    importClientsModal.classList.add('hidden');
-});
+// Setup import modal events
+function setupImportClientsEvents() {
+    const importBtn = document.getElementById('btn-import-clients');
+    const closeBtn = document.getElementById('import-clients-modal-close');
+    const cancelBtn = document.getElementById('btn-cancel-import');
+    const templateBtn = document.getElementById('btn-download-template');
+    const uploadZone = document.getElementById('import-upload-zone');
+    const fileInput = document.getElementById('import-clients-file');
+    const modal = document.getElementById('import-clients-modal');
 
-// Download template button
-document.getElementById('btn-download-template')?.addEventListener('click', async (e) => {
-    e.preventDefault();
-    window.location.href = '/api/clients/template';
-});
-
-// File upload zone
-importUploadZone?.addEventListener('click', () => importClientsFile?.click());
-
-importUploadZone?.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    importUploadZone.classList.add('dragover');
-});
-
-importUploadZone?.addEventListener('dragleave', () => {
-    importUploadZone.classList.remove('dragover');
-});
-
-importUploadZone?.addEventListener('drop', (e) => {
-    e.preventDefault();
-    importUploadZone.classList.remove('dragover');
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        handleClientsImport(files[0]);
+    if (importBtn) {
+        importBtn.addEventListener('click', openImportClientsModal);
     }
-});
 
-importClientsFile?.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-        handleClientsImport(e.target.files[0]);
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeImportClientsModal);
     }
-});
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', closeImportClientsModal);
+    }
+
+    if (templateBtn) {
+        templateBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.location.href = '/api/clients/template';
+        });
+    }
+
+    if (uploadZone) {
+        uploadZone.addEventListener('click', () => {
+            const input = document.getElementById('import-clients-file');
+            if (input) input.click();
+        });
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleClientsImport(files[0]);
+            }
+        });
+    }
+
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleClientsImport(e.target.files[0]);
+            }
+        });
+    }
+
+    // Close on backdrop click
+    if (modal) {
+        const backdrop = modal.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', closeImportClientsModal);
+        }
+    }
+}
+
+// Initialize import events when DOM is ready
+setupImportClientsEvents();
 
 async function handleClientsImport(file) {
     const validExtensions = ['.csv', '.xlsx', '.xls'];

@@ -788,27 +788,86 @@ if (btnSaveSenderConfig) {
 // Clients Management
 // ==========================================================================
 
+let allClientsData = {};
+let clientsSearchTerm = '';
+let clientsFilterValue = 'all';
+
 async function loadClients() {
     try {
         const response = await fetch('/api/clients');
-        const clients = await response.json();
+        allClientsData = await response.json();
 
-        renderClients(clients);
+        applyClientsFilter();
     } catch (error) {
         showToast('Erreur lors du chargement des clients', 'error');
     }
 }
 
+function applyClientsFilter() {
+    const searchLower = clientsSearchTerm.toLowerCase();
+
+    const filtered = Object.entries(allClientsData).filter(([key, client]) => {
+        // Search filter
+        const matchesSearch = !searchLower ||
+            key.toLowerCase().includes(searchLower) ||
+            (client.nom && client.nom.toLowerCase().includes(searchLower)) ||
+            (client.email && client.email.toLowerCase().includes(searchLower)) ||
+            (client.ville && client.ville.toLowerCase().includes(searchLower)) ||
+            (client.siret && client.siret.includes(searchLower));
+
+        // Status filter
+        const isComplete = client.siret && client.siret !== '00000000000000' &&
+                          client.email && client.email.includes('@') &&
+                          client.adresse && client.adresse !== 'Adresse à compléter';
+
+        const matchesFilter = clientsFilterValue === 'all' ||
+            (clientsFilterValue === 'complete' && isComplete) ||
+            (clientsFilterValue === 'incomplete' && !isComplete);
+
+        return matchesSearch && matchesFilter;
+    });
+
+    renderClients(Object.fromEntries(filtered));
+    updateClientsStats();
+}
+
+function updateClientsStats() {
+    const statsContainer = document.getElementById('clients-stats');
+    if (!statsContainer) return;
+
+    const total = Object.keys(allClientsData).length;
+    const complete = Object.values(allClientsData).filter(c =>
+        c.siret && c.siret !== '00000000000000' &&
+        c.email && c.email.includes('@')
+    ).length;
+    const incomplete = total - complete;
+
+    statsContainer.innerHTML = `
+        <div class="stat-card mini">
+            <div class="stat-value">${total}</div>
+            <div class="stat-label">Total</div>
+        </div>
+        <div class="stat-card mini">
+            <div class="stat-value" style="color: var(--color-success)">${complete}</div>
+            <div class="stat-label">Complets</div>
+        </div>
+        <div class="stat-card mini">
+            <div class="stat-value" style="color: var(--color-warning)">${incomplete}</div>
+            <div class="stat-label">Incomplets</div>
+        </div>
+    `;
+}
+
 function renderClients(clients) {
+    const emptyState = document.getElementById('clients-empty');
+
     if (Object.keys(clients).length === 0) {
-        clientsGrid.innerHTML = `
-            <div class="empty-state">
-                <p>Aucun client configuré</p>
-                <p>Les clients seront ajoutés automatiquement lors de l'import d'un CSV</p>
-            </div>
-        `;
+        clientsGrid.innerHTML = '';
+        if (emptyState) emptyState.classList.remove('hidden');
         return;
     }
+
+    if (emptyState) emptyState.classList.add('hidden');
 
     clientsGrid.innerHTML = Object.entries(clients).map(([key, client]) => {
         const isComplete = client.siret && client.siret !== '00000000000000';
@@ -1108,6 +1167,28 @@ document.getElementById('btn-add-client').addEventListener('click', () => {
     document.getElementById('modal-title').textContent = 'Nouveau client';
     clientModal.classList.remove('hidden');
 });
+
+// Clients search
+const clientsSearchInput = document.getElementById('clients-search');
+let clientsSearchTimeout = null;
+if (clientsSearchInput) {
+    clientsSearchInput.addEventListener('input', (e) => {
+        clearTimeout(clientsSearchTimeout);
+        clientsSearchTimeout = setTimeout(() => {
+            clientsSearchTerm = e.target.value;
+            applyClientsFilter();
+        }, 300);
+    });
+}
+
+// Clients filter
+const clientsFilterSelect = document.getElementById('clients-filter');
+if (clientsFilterSelect) {
+    clientsFilterSelect.addEventListener('change', (e) => {
+        clientsFilterValue = e.target.value;
+        applyClientsFilter();
+    });
+}
 
 // Modal close
 document.getElementById('modal-close').addEventListener('click', closeModal);

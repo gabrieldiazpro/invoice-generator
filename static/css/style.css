@@ -2069,3 +2069,54 @@ body.impersonating .header {
 .bulk-invoices-list tr:hover {
     background-color: var(--color-gray-50);
 }
+
+/* ==========================================================================
+   Clients Filter & Stats
+   ========================================================================== */
+
+.clients-filter {
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: 0.875rem;
+    font-family: var(--font-body);
+    color: var(--color-gray-900);
+    background-color: var(--color-white);
+    border: 1px solid var(--color-gray-300);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.clients-filter:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(48, 38, 240, 0.1);
+}
+
+.clients-stats {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.stat-card.mini {
+    padding: var(--spacing-sm) var(--spacing-md);
+    min-width: 80px;
+}
+
+.stat-card.mini .stat-value {
+    font-size: 1.25rem;
+}
+
+.stat-card.mini .stat-label {
+    font-size: 0.7rem;
+}
+
+.clients-empty {
+    text-align: center;
+    padding: var(--spacing-xl);
+    color: var(--color-gray-500);
+}
+
+.clients-empty.hidden {
+    display: none;
+}

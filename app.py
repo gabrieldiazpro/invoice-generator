@@ -315,17 +315,184 @@ def save_clients_config(clients):
         clients_collection.replace_one({'_id': client_name}, client_doc, upsert=True)
 
 
-def get_client_info(shipper_name, clients_config):
-    """Récupère les informations d'un client ou crée une entrée par défaut"""
-    if shipper_name in clients_config:
-        return clients_config[shipper_name]
+# =============================================================================
+# Matching intelligent des clients
+# =============================================================================
 
-    # Vérifier dans MongoDB
-    client = clients_collection.find_one({'_id': shipper_name})
-    if client:
-        client.pop('_id', None)
-        clients_config[shipper_name] = client
-        return client
+def normalize_client_name(name):
+    """
+    Normalise un nom de client pour la comparaison.
+    - Minuscules
+    - Supprime accents
+    - Supprime ponctuation et espaces multiples
+    - Supprime les formes juridiques courantes
+    """
+    import unicodedata
+
+    if not name:
+        return ""
+
+    # Minuscules
+    normalized = name.lower().strip()
+
+    # Supprime les accents
+    normalized = unicodedata.normalize('NFD', normalized)
+    normalized = ''.join(c for c in normalized if unicodedata.category(c) != 'Mn')
+
+    # Supprime la ponctuation sauf espaces
+    normalized = re.sub(r'[^\w\s]', ' ', normalized)
+
+    # Supprime les formes juridiques courantes (à la fin ou au début)
+    legal_forms = [
+        r'\bsarl\b', r'\bsas\b', r'\bsa\b', r'\beurl\b', r'\bsasu\b',
+        r'\bsei\b', r'\bsnc\b', r'\bsci\b', r'\bauto entrepreneur\b',
+        r'\bautoentrepreneur\b', r'\bei\b', r'\bme\b', r'\bscp\b',
+        r'\bgmbh\b', r'\bltd\b', r'\bllc\b', r'\binc\b', r'\bcorp\b'
+    ]
+    for form in legal_forms:
+        normalized = re.sub(form, '', normalized)
+
+    # Supprime les espaces multiples
+    normalized = re.sub(r'\s+', ' ', normalized).strip()
+
+    return normalized
+
+
+def calculate_similarity(s1, s2):
+    """
+    Calcule un score de similarité entre deux chaînes (0 à 1).
+    Utilise une combinaison de métriques.
+    """
+    if not s1 or not s2:
+        return 0.0
+
+    # Normalise les deux chaînes
+    n1 = normalize_client_name(s1)
+    n2 = normalize_client_name(s2)
+
+    if n1 == n2:
+        return 1.0
+
+    # Si l'un contient l'autre
+    if n1 in n2 or n2 in n1:
+        shorter = min(len(n1), len(n2))
+        longer = max(len(n1), len(n2))
+        return shorter / longer if longer > 0 else 0
+
+    # Score basé sur les mots communs
+    words1 = set(n1.split())
+    words2 = set(n2.split())
+
+    if not words1 or not words2:
+        return 0.0
+
+    common_words = words1 & words2
+    all_words = words1 | words2
+
+    jaccard = len(common_words) / len(all_words) if all_words else 0
+
+    # Score basé sur les caractères communs (pour les typos)
+    common_chars = sum(1 for c in n1 if c in n2)
+    char_score = (2.0 * common_chars) / (len(n1) + len(n2)) if (len(n1) + len(n2)) > 0 else 0
+
+    # Score de préfixe commun (important pour les noms)
+    prefix_len = 0
+    for c1, c2 in zip(n1, n2):
+        if c1 == c2:
+            prefix_len += 1
+        else:
+            break
+    prefix_score = prefix_len / max(len(n1), len(n2)) if max(len(n1), len(n2)) > 0 else 0
+
+    # Combinaison pondérée
+    return (jaccard * 0.4) + (char_score * 0.3) + (prefix_score * 0.3)
+
+
+def find_best_client_match(shipper_name, clients_config, threshold=0.65):
+    """
+    Trouve le meilleur client correspondant dans la config.
+
+    Args:
+        shipper_name: Nom du client à chercher
+        clients_config: Dict des clients existants
+        threshold: Score minimum de similarité (0-1)
+
+    Returns:
+        (matched_name, client_info, score) ou (None, None, 0) si non trouvé
+    """
+    if not shipper_name or not clients_config:
+        return None, None, 0
+
+    # 1. Match exact
+    if shipper_name in clients_config:
+        return shipper_name, clients_config[shipper_name], 1.0
+
+    # 2. Match insensible à la casse
+    shipper_lower = shipper_name.lower().strip()
+    for client_name, client_info in clients_config.items():
+        if client_name.lower().strip() == shipper_lower:
+            return client_name, client_info, 1.0
+
+    # 3. Match normalisé exact
+    shipper_normalized = normalize_client_name(shipper_name)
+    for client_name, client_info in clients_config.items():
+        if normalize_client_name(client_name) == shipper_normalized:
+            return client_name, client_info, 0.95
+
+    # 4. Match par similarité
+    best_match = None
+    best_score = threshold
+    best_info = None
+
+    for client_name, client_info in clients_config.items():
+        score = calculate_similarity(shipper_name, client_name)
+        if score > best_score:
+            best_score = score
+            best_match = client_name
+            best_info = client_info
+
+    if best_match:
+        print(f"✓ Client fuzzy match: '{shipper_name}' → '{best_match}' (score: {best_score:.2f})")
+        return best_match, best_info, best_score
+
+    return None, None, 0
+
+
+def get_client_info(shipper_name, clients_config):
+    """
+    Récupère les informations d'un client avec matching intelligent.
+
+    - Match exact
+    - Match insensible à la casse
+    - Match normalisé (sans accents, ponctuation, formes juridiques)
+    - Match par similarité (typos, abréviations)
+    """
+    # Essayer le matching intelligent d'abord
+    matched_name, client_info, score = find_best_client_match(shipper_name, clients_config)
+
+    if client_info:
+        # Si c'est un match fuzzy (pas exact), on garde le mapping
+        if matched_name != shipper_name and score < 1.0:
+            # Créer une référence pour ce nom alternatif
+            clients_config[shipper_name] = client_info
+        return client_info
+
+    # Vérifier dans MongoDB avec matching intelligent
+    all_db_clients = {doc['_id']: doc for doc in clients_collection.find()}
+
+    for db_name, db_client in all_db_clients.items():
+        # Match exact
+        if db_name == shipper_name:
+            db_client.pop('_id', None)
+            clients_config[shipper_name] = db_client
+            return db_client
+
+        # Match par similarité
+        if calculate_similarity(shipper_name, db_name) >= 0.65:
+            db_client.pop('_id', None)
+            clients_config[shipper_name] = db_client
+            print(f"✓ Client DB fuzzy match: '{shipper_name}' → '{db_name}'")
+            return db_client
 
     # Créer une entrée par défaut
     default_client = {

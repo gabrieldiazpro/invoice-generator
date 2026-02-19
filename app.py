@@ -3336,6 +3336,77 @@ def delete_client(client_name):
     return jsonify({'success': True})
 
 
+@app.route('/api/clients/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_clients():
+    """Supprime plusieurs clients en une seule opération"""
+    data = request.get_json()
+    keys = data.get('keys', [])
+
+    if not keys:
+        return jsonify({'success': False, 'error': 'Aucun client sélectionné'}), 400
+
+    try:
+        result = clients_collection.delete_many({'_id': {'$in': keys}})
+        return jsonify({
+            'success': True,
+            'message': f'{result.deleted_count} client(s) supprimé(s)',
+            'deleted_count': result.deleted_count
+        })
+    except Exception as e:
+        logger.error(f"Erreur suppression en masse: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/clients/bulk-export', methods=['POST'])
+@login_required
+def bulk_export_clients():
+    """Exporte plusieurs clients en CSV"""
+    import io
+    import csv
+
+    data = request.get_json()
+    keys = data.get('keys', [])
+
+    if not keys:
+        return jsonify({'success': False, 'error': 'Aucun client sélectionné'}), 400
+
+    try:
+        # Récupérer les clients sélectionnés
+        clients = list(clients_collection.find({'_id': {'$in': keys}}))
+
+        # Créer le CSV
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=';')
+
+        # En-têtes
+        writer.writerow(['Nom', 'Adresse', 'Code Postal', 'Ville', 'Pays', 'Email', 'SIRET'])
+
+        # Données
+        for client in clients:
+            writer.writerow([
+                client.get('nom', ''),
+                client.get('adresse', ''),
+                client.get('code_postal', ''),
+                client.get('ville', ''),
+                client.get('pays', 'France'),
+                client.get('email', ''),
+                client.get('siret', '')
+            ])
+
+        # Retourner le fichier
+        output.seek(0)
+        return send_file(
+            io.BytesIO(output.getvalue().encode('utf-8-sig')),
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=f'clients_export_{datetime.now().strftime("%Y%m%d")}.csv'
+        )
+    except Exception as e:
+        logger.error(f"Erreur export en masse: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 def parse_import_file(filepath, ext):
     """Parse un fichier d'import (CSV ou Excel) et retourne un DataFrame"""
     import pandas as pd

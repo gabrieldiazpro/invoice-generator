@@ -955,6 +955,7 @@ function renderClients(clients) {
     if (Object.keys(clients).length === 0) {
         clientsGrid.innerHTML = '';
         if (emptyState) emptyState.classList.remove('hidden');
+        updateClientsBulkActionsBar();
         return;
     }
 
@@ -967,9 +968,12 @@ function renderClients(clients) {
         return `
             <div class="client-card" data-client-key="${safeKey}">
                 <div class="client-card-header">
-                    <div>
-                        <div class="client-name">${escapeHtml(client.nom)}</div>
-                        <div class="client-key">${escapeHtml(key)}</div>
+                    <div class="client-card-title">
+                        <input type="checkbox" class="client-checkbox" data-key="${safeKey}">
+                        <div>
+                            <div class="client-name">${escapeHtml(client.nom)}</div>
+                            <div class="client-key">${escapeHtml(key)}</div>
+                        </div>
                     </div>
                     <div class="client-actions">
                         <button class="client-action edit" data-action="edit" data-key="${safeKey}" title="Modifier">
@@ -1024,6 +1028,16 @@ function renderClients(clients) {
             openCreateAccountModal(clientKey);
         });
     });
+
+    // Attach checkbox change listeners for bulk actions
+    clientsGrid.querySelectorAll('.client-checkbox').forEach(cb => {
+        cb.addEventListener('change', () => {
+            updateClientsBulkActionsBar();
+        });
+    });
+
+    // Reset bulk actions bar
+    updateClientsBulkActionsBar();
 }
 
 // Edit client
@@ -1764,6 +1778,106 @@ async function refreshPreviewData() {
         console.error('Error refreshing preview:', error);
     }
 }
+
+// ==========================================================================
+// Client Bulk Actions
+// ==========================================================================
+
+function getSelectedClientKeys() {
+    const checkboxes = document.querySelectorAll('.client-checkbox:checked');
+    return Array.from(checkboxes).map(cb => decodeURIComponent(cb.dataset.key));
+}
+
+function updateClientsBulkActionsBar() {
+    const selected = getSelectedClientKeys();
+    const bar = document.getElementById('clients-bulk-actions-bar');
+    const countSpan = document.getElementById('clients-bulk-selected-count');
+
+    if (selected.length > 0) {
+        bar.classList.remove('hidden');
+        countSpan.textContent = selected.length;
+    } else {
+        bar.classList.add('hidden');
+    }
+
+    // Update select all checkbox state
+    const allCheckboxes = document.querySelectorAll('.client-checkbox');
+    const allChecked = allCheckboxes.length > 0 && Array.from(allCheckboxes).every(cb => cb.checked);
+    const selectAll = document.getElementById('select-all-clients');
+    if (selectAll) {
+        selectAll.checked = allChecked;
+        selectAll.indeterminate = selected.length > 0 && !allChecked;
+    }
+}
+
+// Select all clients checkbox
+const selectAllClients = document.getElementById('select-all-clients');
+if (selectAllClients) {
+    selectAllClients.addEventListener('change', (e) => {
+        const checkboxes = document.querySelectorAll('.client-checkbox');
+        checkboxes.forEach(cb => cb.checked = e.target.checked);
+        updateClientsBulkActionsBar();
+    });
+}
+
+// Bulk Export Clients
+document.getElementById('btn-clients-bulk-export')?.addEventListener('click', async () => {
+    const keys = getSelectedClientKeys();
+    if (keys.length === 0) return;
+
+    try {
+        showToast('Préparation de l\'export...', 'info');
+
+        const response = await fetch('/api/clients/bulk-export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keys })
+        });
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `clients_export_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+            showToast(`${keys.length} client(s) exporté(s)`, 'success');
+        } else {
+            showToast('Erreur lors de l\'export', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de l\'export', 'error');
+    }
+});
+
+// Bulk Delete Clients
+document.getElementById('btn-clients-bulk-delete')?.addEventListener('click', async () => {
+    const keys = getSelectedClientKeys();
+    if (keys.length === 0) return;
+
+    if (!confirm(`Supprimer définitivement ${keys.length} client(s) ?\n\nCette action est irréversible.`)) return;
+
+    try {
+        const response = await fetch('/api/clients/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keys })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadClients();
+        } else {
+            showToast(data.error || 'Erreur', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de la suppression', 'error');
+    }
+});
 
 // ==========================================================================
 // History Management

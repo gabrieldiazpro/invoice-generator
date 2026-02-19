@@ -2579,3 +2579,96 @@ body.impersonating .header {
     color: #92400e;
     border-radius: var(--radius-sm);
 }
+
+/* ==========================================================================
+   Client Multi-Selection
+   ========================================================================== */
+
+.client-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.client-card-title {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+}
+
+.clients-select-all-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-white);
+    cursor: pointer;
+    margin-right: var(--spacing-sm);
+}
+
+/* Client card selected state */
+.client-card.selected {
+    border-color: var(--color-primary);
+    background-color: rgba(48, 38, 240, 0.02);
+}
+
+.client-card.selected .client-checkbox {
+    accent-color: var(--color-primary);
+}
+
+/* Bulk actions bar for clients */
+#clients-bulk-actions-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, var(--color-primary) 0%, #4f46e5 100%);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+    color: var(--color-white);
+    animation: slideDown 0.2s ease-out;
+}
+
+#clients-bulk-actions-bar.hidden {
+    display: none;
+}
+
+#clients-bulk-actions-bar .bulk-info {
+    display: flex;
+    align-items: center;
+    font-weight: 500;
+    font-size: 0.875rem;
+}
+
+#clients-bulk-actions-bar .bulk-buttons {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+#clients-bulk-actions-bar .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    border: none;
+}
+
+#clients-bulk-actions-bar .btn-secondary {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: var(--color-white);
+}
+
+#clients-bulk-actions-bar .btn-secondary:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+#clients-bulk-actions-bar .btn-danger {
+    background-color: var(--color-error);
+    color: var(--color-white);
+}
+
+#clients-bulk-actions-bar .btn-danger:hover {
+    background-color: #dc2626;
+}

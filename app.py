@@ -3381,17 +3381,26 @@ def import_clients():
                 return jsonify({'error': 'Impossible de lire le fichier CSV'}), 400
         else:
             import pandas as pd
+            # Essayer de lire avec différentes lignes d'en-tête
             df = pd.read_excel(filepath)
 
+            # Vérifier si les colonnes sont "Unnamed" (en-têtes pas sur la première ligne)
+            unnamed_cols = sum(1 for col in df.columns if 'unnamed' in str(col).lower())
+            if unnamed_cols > len(df.columns) / 2:
+                # Essayer avec header sur ligne 2 (format "Liste client.xlsx")
+                df = pd.read_excel(filepath, header=2)
+
         # Mapping des colonnes (insensible à la casse, avec alternatives)
+        # Supporte le format "Liste client.xlsx" de Peoples Post
         column_mappings = {
-            'nom': ['nom', 'name', 'raison_sociale', 'raison sociale', 'société', 'societe', 'client', 'shipper'],
-            'adresse': ['adresse', 'address', 'rue', 'street'],
+            'nom': ['official company name', 'used customer name', 'company name', 'customer name', 'customer',
+                    'nom', 'name', 'raison_sociale', 'raison sociale', 'société', 'societe', 'client', 'shipper'],
+            'adresse': ['billing address', 'adresse', 'address', 'rue', 'street'],
             'code_postal': ['code_postal', 'cp', 'postal_code', 'zip', 'zipcode', 'code postal'],
             'ville': ['ville', 'city', 'town'],
             'pays': ['pays', 'country'],
-            'email': ['email', 'mail', 'e-mail', 'courriel'],
-            'siret': ['siret', 'siren', 'numero_siret', 'n° siret', 'n siret']
+            'email': ['billing email address', 'email', 'mail', 'e-mail', 'courriel'],
+            'siret': ['siret', 'numero de siret', 'siren', 'numero_siret', 'n° siret', 'n siret']
         }
 
         # Normaliser les noms de colonnes
@@ -3512,10 +3521,10 @@ def download_clients_template():
     """Génère et télécharge un template CSV pour l'import de clients"""
     import io
 
-    # Créer le contenu CSV
-    csv_content = "nom;adresse;code_postal;ville;pays;email;siret\n"
-    csv_content += "Exemple SARL;12 rue de la Paix;75001;Paris;France;contact@exemple.com;12345678901234\n"
-    csv_content += "Autre Client SAS;5 avenue des Champs;69001;Lyon;France;info@autre.fr;98765432109876\n"
+    # Créer le contenu CSV (compatible avec le format "Liste client.xlsx")
+    csv_content = "Official company name;Billing Address;Billing email address;Siret\n"
+    csv_content += "EXEMPLE SARL;12 rue de la Paix, 75001 Paris;contact@exemple.com;12345678901234\n"
+    csv_content += "AUTRE CLIENT SAS;5 avenue des Champs, 69001 Lyon;info@autre.fr;98765432109876\n"
 
     # Créer le fichier en mémoire
     buffer = io.BytesIO()

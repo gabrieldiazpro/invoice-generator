@@ -408,7 +408,7 @@ def calculate_similarity(s1, s2):
     return (jaccard * 0.4) + (char_score * 0.3) + (prefix_score * 0.3)
 
 
-def find_best_client_match(shipper_name, clients_config, threshold=0.65):
+def find_best_client_match(shipper_name, clients_config, threshold=0.55):
     """
     Trouve le meilleur client correspondant dans la config.
 
@@ -423,29 +423,46 @@ def find_best_client_match(shipper_name, clients_config, threshold=0.65):
     if not shipper_name or not clients_config:
         return None, None, 0
 
-    # 1. Match exact
+    # 1. Match exact sur la clé
     if shipper_name in clients_config:
         return shipper_name, clients_config[shipper_name], 1.0
 
-    # 2. Match insensible à la casse
+    # 2. Match insensible à la casse sur la clé
     shipper_lower = shipper_name.lower().strip()
     for client_name, client_info in clients_config.items():
         if client_name.lower().strip() == shipper_lower:
             return client_name, client_info, 1.0
 
-    # 3. Match normalisé exact
+    # 3. Match exact sur le champ 'nom' du client
+    for client_name, client_info in clients_config.items():
+        client_nom = client_info.get('nom', '')
+        if client_nom.lower().strip() == shipper_lower:
+            return client_name, client_info, 1.0
+
+    # 4. Match normalisé exact
     shipper_normalized = normalize_client_name(shipper_name)
     for client_name, client_info in clients_config.items():
         if normalize_client_name(client_name) == shipper_normalized:
             return client_name, client_info, 0.95
+        # Aussi vérifier le champ 'nom'
+        client_nom = client_info.get('nom', '')
+        if normalize_client_name(client_nom) == shipper_normalized:
+            return client_name, client_info, 0.95
 
-    # 4. Match par similarité
+    # 5. Match par similarité (sur clé ET sur nom)
     best_match = None
     best_score = threshold
     best_info = None
 
     for client_name, client_info in clients_config.items():
-        score = calculate_similarity(shipper_name, client_name)
+        # Score sur la clé
+        score_key = calculate_similarity(shipper_name, client_name)
+        # Score sur le nom
+        client_nom = client_info.get('nom', '')
+        score_nom = calculate_similarity(shipper_name, client_nom) if client_nom else 0
+        # Prendre le meilleur score
+        score = max(score_key, score_nom)
+
         if score > best_score:
             best_score = score
             best_match = client_name
@@ -479,20 +496,38 @@ def get_client_info(shipper_name, clients_config):
 
     # Vérifier dans MongoDB avec matching intelligent
     all_db_clients = {doc['_id']: doc for doc in clients_collection.find()}
+    shipper_lower = shipper_name.lower().strip()
+    shipper_normalized = normalize_client_name(shipper_name)
 
     for db_name, db_client in all_db_clients.items():
-        # Match exact
+        client_nom = db_client.get('nom', '')
+
+        # Match exact sur la clé
         if db_name == shipper_name:
             db_client.pop('_id', None)
-            clients_config[db_name] = db_client  # Utiliser le nom exact
+            clients_config[db_name] = db_client
             return db_client
 
-        # Match par similarité
-        if calculate_similarity(shipper_name, db_name) >= 0.65:
+        # Match insensible à la casse sur clé ou nom
+        if db_name.lower().strip() == shipper_lower or client_nom.lower().strip() == shipper_lower:
             db_client.pop('_id', None)
-            # Utiliser le nom ORIGINAL de la DB, pas le nom du CSV
             clients_config[db_name] = db_client
-            print(f"✓ Client DB fuzzy match: '{shipper_name}' → '{db_name}'")
+            return db_client
+
+        # Match normalisé
+        if normalize_client_name(db_name) == shipper_normalized or normalize_client_name(client_nom) == shipper_normalized:
+            db_client.pop('_id', None)
+            clients_config[db_name] = db_client
+            print(f"✓ Client DB normalized match: '{shipper_name}' → '{db_name}'")
+            return db_client
+
+        # Match par similarité (sur clé et nom)
+        score_key = calculate_similarity(shipper_name, db_name)
+        score_nom = calculate_similarity(shipper_name, client_nom) if client_nom else 0
+        if max(score_key, score_nom) >= 0.55:
+            db_client.pop('_id', None)
+            clients_config[db_name] = db_client
+            print(f"✓ Client DB fuzzy match: '{shipper_name}' → '{db_name}' (score: {max(score_key, score_nom):.2f})")
             return db_client
 
     # Aucun match trouvé - créer une nouvelle entrée
@@ -1955,12 +1990,17 @@ def upload_csv():
                 for row in rows
             )
 
+            # Vérifier si le client est configuré (SIRET valide ET email valide)
+            siret = client_info.get('siret', '00000000000000')
+            email = client_info.get('email', 'email@example.com')
+            is_configured = (siret != '00000000000000' and siret != '') and (email != 'email@example.com' and email != '' and '@' in email)
+
             shippers_summary.append({
                 'name': shipper_name,
                 'lines_count': len(rows),
                 'total_ht': round(total_ht, 2),
-                'client_configured': client_info.get('siret', '') != '00000000000000',
-                'client_email': client_info.get('email', '')
+                'client_configured': is_configured,
+                'client_email': email if email != 'email@example.com' else ''
             })
 
         save_clients_config(clients_config)
@@ -1975,6 +2015,61 @@ def upload_csv():
     except Exception as e:
         if os.path.exists(filepath):
             os.remove(filepath)
+        return jsonify({'error': f'Erreur lors du traitement: {str(e)}'}), 500
+
+
+@app.route('/api/refresh-preview/<file_id>')
+@login_required
+def refresh_preview(file_id):
+    """Rafraîchit les données de prévisualisation après mise à jour d'un client"""
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], file_id)
+
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'Fichier non trouvé'}), 404
+
+    try:
+        # Parser le CSV
+        data_by_shipper = parse_csv(filepath)
+
+        if not data_by_shipper:
+            return jsonify({'error': 'Aucune donnée trouvée dans le fichier CSV'}), 400
+
+        # Recharger la config des clients (avec les mises à jour)
+        clients_config = load_clients_config()
+
+        # Préparer le résumé
+        shippers_summary = []
+        for shipper_name, rows in data_by_shipper.items():
+            client_info = get_client_info(shipper_name, clients_config)
+
+            # Calculer le total estimé
+            total_ht = sum(
+                float(row.get('Prix', '0').replace(',', '.') or '0') *
+                int(float(row.get('Quantité', '1').replace(',', '.') or '1'))
+                for row in rows
+            )
+
+            # Vérifier si le client est configuré
+            siret = client_info.get('siret', '00000000000000')
+            email = client_info.get('email', 'email@example.com')
+            is_configured = (siret != '00000000000000' and siret != '') and (email != 'email@example.com' and email != '' and '@' in email)
+
+            shippers_summary.append({
+                'name': shipper_name,
+                'lines_count': len(rows),
+                'total_ht': round(total_ht, 2),
+                'client_configured': is_configured,
+                'client_email': email if email != 'email@example.com' else ''
+            })
+
+        return jsonify({
+            'success': True,
+            'file_id': file_id,
+            'shippers': shippers_summary,
+            'total_shippers': len(shippers_summary)
+        })
+
+    except Exception as e:
         return jsonify({'error': f'Erreur lors du traitement: {str(e)}'}), 500
 
 

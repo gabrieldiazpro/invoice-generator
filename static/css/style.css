@@ -2425,3 +2425,15 @@ body.impersonating .header {
 .invoice-actions .btn svg {
     flex-shrink: 0;
 }
+
+/* Shipper status clickable */
+.shipper-status.clickable {
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.shipper-status.clickable:hover {
+    background-color: var(--color-warning);
+    color: white;
+    transform: scale(1.05);
+}

@@ -162,19 +162,26 @@ function showPreview(data) {
     `;
 
     // Update shippers list
-    shippersList.innerHTML = data.shippers.map(shipper => `
-        <div class="shipper-item">
-            <input type="checkbox" class="shipper-checkbox" data-shipper="${shipper.name}" checked>
-            <div class="shipper-info">
-                <div class="shipper-name">${shipper.name}</div>
-                <div class="shipper-details">${shipper.lines_count} lignes${shipper.client_email ? ' • ' + shipper.client_email : ''}</div>
+    shippersList.innerHTML = data.shippers.map(shipper => {
+        const isConfigured = shipper.client_configured;
+        const statusClass = isConfigured ? 'configured' : 'missing clickable';
+        const statusText = isConfigured ? '✓ Configuré' : '⚠ À configurer';
+        const safeShipperName = encodeURIComponent(shipper.name);
+
+        return `
+            <div class="shipper-item">
+                <input type="checkbox" class="shipper-checkbox" data-shipper="${shipper.name}" checked>
+                <div class="shipper-info">
+                    <div class="shipper-name">${shipper.name}</div>
+                    <div class="shipper-details">${shipper.lines_count} lignes${shipper.client_email && shipper.client_email !== 'email@example.com' ? ' • ' + shipper.client_email : ''}</div>
+                </div>
+                <div class="shipper-status ${statusClass}" ${!isConfigured ? `data-shipper-key="${safeShipperName}" onclick="openClientConfigFromPreview('${safeShipperName}')"` : ''}>
+                    ${statusText}
+                </div>
+                <div class="shipper-total">${formatCurrency(shipper.total_ht)} HT</div>
             </div>
-            <div class="shipper-status ${shipper.client_configured ? 'configured' : 'missing'}">
-                ${shipper.client_configured ? '✓ Configuré' : '⚠ À configurer'}
-            </div>
-            <div class="shipper-total">${formatCurrency(shipper.total_ht)} HT</div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 
     // Show steps
     stepUpload.classList.add('hidden');
@@ -1040,6 +1047,34 @@ window.editClient = async function(key) {
     }
 };
 
+// Open client config from preview step (À configurer button)
+window.openClientConfigFromPreview = async function(encodedKey) {
+    const key = decodeURIComponent(encodedKey);
+
+    try {
+        const response = await fetch('/api/clients');
+        const clients = await response.json();
+        const client = clients[key] || {};
+
+        document.getElementById('client-key').value = key;
+        document.getElementById('client-nom').value = client.nom || key;
+        document.getElementById('client-adresse').value = client.adresse && client.adresse !== 'Adresse à compléter' ? client.adresse : '';
+        document.getElementById('client-cp').value = client.code_postal && client.code_postal !== '00000' ? client.code_postal : '';
+        document.getElementById('client-ville').value = client.ville && client.ville !== 'Ville' ? client.ville : '';
+        document.getElementById('client-pays').value = client.pays || 'France';
+        document.getElementById('client-email').value = client.email && client.email !== 'email@example.com' ? client.email : '';
+        document.getElementById('client-siret').value = client.siret && client.siret !== '00000000000000' ? client.siret : '';
+
+        document.getElementById('modal-title').textContent = `Configurer: ${key}`;
+
+        // Mark that we're editing from preview to refresh preview after save
+        clientModal.dataset.fromPreview = 'true';
+        clientModal.classList.remove('hidden');
+    } catch (error) {
+        showToast('Erreur lors du chargement du client', 'error');
+    }
+};
+
 // Delete client
 window.deleteClient = async function(key) {
     if (!confirm(`Êtes-vous sûr de vouloir supprimer "${key}" ?`)) {
@@ -1511,12 +1546,38 @@ document.getElementById('btn-save-client').addEventListener('click', async () =>
         }
 
         showToast('Client enregistré', 'success');
+
+        // Check if we need to refresh preview
+        const fromPreview = clientModal.dataset.fromPreview === 'true';
         closeModal();
+        clientModal.dataset.fromPreview = '';
+
+        if (fromPreview && currentFileId) {
+            // Re-upload the file to refresh the preview with updated client data
+            await refreshPreviewData();
+        }
+
         loadClients();
     } catch (error) {
         showToast(error.message, 'error');
     }
 });
+
+// Refresh preview data after client update
+async function refreshPreviewData() {
+    if (!currentFileId) return;
+
+    try {
+        const response = await fetch(`/api/refresh-preview/${currentFileId}`);
+        const data = await response.json();
+
+        if (data.success) {
+            showPreview(data);
+        }
+    } catch (error) {
+        console.error('Error refreshing preview:', error);
+    }
+}
 
 // ==========================================================================
 // History Management

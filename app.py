@@ -2089,6 +2089,19 @@ def download_invoice(batch_id, filename):
     return send_file(filepath, as_attachment=True, download_name=filename)
 
 
+@app.route('/api/view/<batch_id>/<filename>')
+@login_required
+def view_invoice(batch_id, filename):
+    """Visualise une facture dans le navigateur (sans téléchargement)"""
+    batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
+    filepath = os.path.join(batch_folder, filename)
+
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'Fichier non trouvé'}), 404
+
+    return send_file(filepath, as_attachment=False, mimetype='application/pdf')
+
+
 @app.route('/api/download-all/<batch_id>')
 @login_required
 def download_all_invoices(batch_id):

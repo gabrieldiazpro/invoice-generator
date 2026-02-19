@@ -466,15 +466,15 @@ def get_client_info(shipper_name, clients_config):
     - Match insensible à la casse
     - Match normalisé (sans accents, ponctuation, formes juridiques)
     - Match par similarité (typos, abréviations)
+
+    IMPORTANT: Ne crée PAS de doublons - utilise le nom original du client existant.
     """
-    # Essayer le matching intelligent d'abord
+    # Essayer le matching intelligent d'abord (dans le cache local)
     matched_name, client_info, score = find_best_client_match(shipper_name, clients_config)
 
     if client_info:
-        # Si c'est un match fuzzy (pas exact), on garde le mapping
-        if matched_name != shipper_name and score < 1.0:
-            # Créer une référence pour ce nom alternatif
-            clients_config[shipper_name] = client_info
+        # Retourner les infos du client existant sans créer de doublon
+        # On ne sauvegarde PAS le nom alternatif dans la config
         return client_info
 
     # Vérifier dans MongoDB avec matching intelligent
@@ -484,17 +484,18 @@ def get_client_info(shipper_name, clients_config):
         # Match exact
         if db_name == shipper_name:
             db_client.pop('_id', None)
-            clients_config[shipper_name] = db_client
+            clients_config[db_name] = db_client  # Utiliser le nom exact
             return db_client
 
         # Match par similarité
         if calculate_similarity(shipper_name, db_name) >= 0.65:
             db_client.pop('_id', None)
-            clients_config[shipper_name] = db_client
+            # Utiliser le nom ORIGINAL de la DB, pas le nom du CSV
+            clients_config[db_name] = db_client
             print(f"✓ Client DB fuzzy match: '{shipper_name}' → '{db_name}'")
             return db_client
 
-    # Créer une entrée par défaut
+    # Aucun match trouvé - créer une nouvelle entrée
     default_client = {
         "nom": shipper_name,
         "adresse": "Adresse à compléter",
@@ -3056,6 +3057,139 @@ def get_clients():
                 clients[client_key]['account_status'] = {'has_account': False}
 
     return jsonify(clients)
+
+
+@app.route('/api/clients/duplicates', methods=['GET'])
+@login_required
+def get_duplicate_clients():
+    """Détecte les clients en doublon basé sur la similarité des noms"""
+    clients = load_clients_config()
+    client_names = list(clients.keys())
+
+    duplicates = []
+    processed = set()
+
+    for i, name1 in enumerate(client_names):
+        if name1 in processed:
+            continue
+
+        group = [name1]
+        for name2 in client_names[i+1:]:
+            if name2 in processed:
+                continue
+            if calculate_similarity(name1, name2) >= 0.65:
+                group.append(name2)
+                processed.add(name2)
+
+        if len(group) > 1:
+            processed.add(name1)
+            # Trouver le client avec le plus d'infos (siret rempli, email, etc.)
+            best_client = None
+            best_score = -1
+            for name in group:
+                client = clients[name]
+                score = 0
+                if client.get('siret', '00000000000000') != '00000000000000':
+                    score += 10
+                if client.get('email', 'email@example.com') != 'email@example.com':
+                    score += 5
+                if client.get('adresse', 'Adresse à compléter') != 'Adresse à compléter':
+                    score += 3
+                if score > best_score:
+                    best_score = score
+                    best_client = name
+
+            duplicates.append({
+                'names': group,
+                'recommended_keep': best_client,
+                'clients': {name: clients[name] for name in group}
+            })
+
+    return jsonify({
+        'success': True,
+        'duplicates': duplicates,
+        'total_groups': len(duplicates)
+    })
+
+
+@app.route('/api/clients/merge', methods=['POST'])
+@login_required
+def merge_clients():
+    """Fusionne des clients en doublon - garde un seul, supprime les autres"""
+    data = request.json
+    keep_name = data.get('keep')  # Le nom du client à garder
+    delete_names = data.get('delete', [])  # Les noms à supprimer
+
+    if not keep_name or not delete_names:
+        return jsonify({'error': 'Paramètres manquants (keep et delete requis)'}), 400
+
+    deleted_count = 0
+    for name in delete_names:
+        if name != keep_name:
+            result = clients_collection.delete_one({'_id': name})
+            if result.deleted_count > 0:
+                deleted_count += 1
+
+    return jsonify({
+        'success': True,
+        'kept': keep_name,
+        'deleted': deleted_count,
+        'message': f'{deleted_count} doublon(s) supprimé(s), "{keep_name}" conservé'
+    })
+
+
+@app.route('/api/clients/cleanup-duplicates', methods=['POST'])
+@login_required
+def cleanup_all_duplicates():
+    """Nettoie automatiquement tous les doublons (garde le plus complet)"""
+    clients = load_clients_config()
+    client_names = list(clients.keys())
+
+    processed = set()
+    total_deleted = 0
+
+    for i, name1 in enumerate(client_names):
+        if name1 in processed:
+            continue
+
+        group = [name1]
+        for name2 in client_names[i+1:]:
+            if name2 in processed:
+                continue
+            if calculate_similarity(name1, name2) >= 0.65:
+                group.append(name2)
+                processed.add(name2)
+
+        if len(group) > 1:
+            processed.add(name1)
+
+            # Trouver le meilleur client à garder
+            best_client = None
+            best_score = -1
+            for name in group:
+                client = clients[name]
+                score = 0
+                if client.get('siret', '00000000000000') != '00000000000000':
+                    score += 10
+                if client.get('email', 'email@example.com') != 'email@example.com':
+                    score += 5
+                if client.get('adresse', 'Adresse à compléter') != 'Adresse à compléter':
+                    score += 3
+                if score > best_score:
+                    best_score = score
+                    best_client = name
+
+            # Supprimer les autres
+            for name in group:
+                if name != best_client:
+                    clients_collection.delete_one({'_id': name})
+                    total_deleted += 1
+
+    return jsonify({
+        'success': True,
+        'deleted': total_deleted,
+        'message': f'{total_deleted} doublon(s) supprimé(s) automatiquement'
+    })
 
 
 @app.route('/api/clients/<client_name>', methods=['PUT'])

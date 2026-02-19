@@ -1109,6 +1109,41 @@ document.getElementById('btn-add-client').addEventListener('click', () => {
     clientModal.classList.remove('hidden');
 });
 
+// Cleanup duplicate clients
+document.getElementById('btn-cleanup-duplicates')?.addEventListener('click', async () => {
+    // First check for duplicates
+    try {
+        const checkResponse = await fetch('/api/clients/duplicates');
+        const checkData = await checkResponse.json();
+
+        if (checkData.total_groups === 0) {
+            showToast('Aucun doublon détecté', 'info');
+            return;
+        }
+
+        const duplicatesList = checkData.duplicates.map(group =>
+            `• ${group.names.join(' / ')} → garder "${group.recommended_keep}"`
+        ).join('\n');
+
+        if (!confirm(`${checkData.total_groups} groupe(s) de doublons détecté(s):\n\n${duplicatesList}\n\nSupprimer automatiquement les doublons (garder le plus complet) ?`)) {
+            return;
+        }
+
+        // Cleanup
+        const response = await fetch('/api/clients/cleanup-duplicates', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadClients();
+        } else {
+            showToast(data.error || 'Erreur lors du nettoyage', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de la vérification des doublons', 'error');
+    }
+});
+
 // Modal close
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.getElementById('btn-cancel').addEventListener('click', closeModal);

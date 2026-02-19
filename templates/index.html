@@ -298,9 +298,19 @@
                 </div>
 
                 <div class="card">
-                    <div class="card-header">
-                        <h2>Liste des clients</h2>
-                        <div class="header-actions">
+                    <div class="card-header clients-header-column">
+                        <div class="clients-header-row">
+                            <h2>Liste des clients</h2>
+                            <button class="btn btn-primary btn-sm" id="btn-add-client">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                                Ajouter
+                            </button>
+                        </div>
+                        <div class="clients-stats" id="clients-stats"></div>
+                        <div class="clients-filters">
                             <div class="search-box">
                                 <input type="text" id="clients-search" placeholder="Rechercher un client...">
                             </div>
@@ -310,17 +320,9 @@
                                 <option value="incomplete">Incomplets</option>
                                 <option value="duplicates">Doublons</option>
                             </select>
-                            <button class="btn btn-primary btn-sm" id="btn-add-client">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                                </svg>
-                                Ajouter
-                            </button>
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="clients-stats" id="clients-stats"></div>
                         <div class="clients-grid" id="clients-grid"></div>
                         <div class="clients-empty hidden" id="clients-empty">
                             <p>Aucun client trouvé</p>

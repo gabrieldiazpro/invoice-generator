@@ -1715,14 +1715,16 @@ if (historyFilterSelect) {
     });
 }
 
-// Send all reminders buttons (R1, R2, R3)
+// Send all reminders buttons (R1, R2, R3, R4)
 const btnSendAllR1 = document.getElementById('btn-send-all-reminder-1');
 const btnSendAllR2 = document.getElementById('btn-send-all-reminder-2');
 const btnSendAllR3 = document.getElementById('btn-send-all-reminder-3');
+const btnSendAllR4 = document.getElementById('btn-send-all-reminder-4');
 
 if (btnSendAllR1) btnSendAllR1.addEventListener('click', () => sendAllReminders(1));
 if (btnSendAllR2) btnSendAllR2.addEventListener('click', () => sendAllReminders(2));
 if (btnSendAllR3) btnSendAllR3.addEventListener('click', () => sendAllReminders(3));
+if (btnSendAllR4) btnSendAllR4.addEventListener('click', () => sendAllReminders(4));
 
 // Select all history checkbox
 const selectAllHistory = document.getElementById('select-all-history');

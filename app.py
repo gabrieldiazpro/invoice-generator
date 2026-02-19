@@ -2797,6 +2797,229 @@ def send_all_reminders(reminder_type):
 
 
 # ============================================================================
+# Routes Historique - Opérations en masse
+# ============================================================================
+
+@app.route('/api/history/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete_from_history():
+    """Supprime plusieurs factures de l'historique"""
+    data = request.json
+    invoice_ids = data.get('ids', [])
+
+    if not invoice_ids:
+        return jsonify({'error': 'Aucune facture sélectionnée'}), 400
+
+    deleted_count = 0
+    for invoice_id in invoice_ids:
+        result = invoice_history_collection.delete_one({'id': invoice_id})
+        if result.deleted_count > 0:
+            deleted_count += 1
+
+    return jsonify({
+        'success': True,
+        'deleted': deleted_count,
+        'message': f'{deleted_count} facture(s) supprimée(s)'
+    })
+
+
+@app.route('/api/history/bulk-info', methods=['POST'])
+@login_required
+def bulk_get_info():
+    """Récupère les informations détaillées de plusieurs factures"""
+    data = request.json
+    invoice_ids = data.get('ids', [])
+
+    if not invoice_ids:
+        return jsonify({'error': 'Aucune facture sélectionnée'}), 400
+
+    invoices = list(invoice_history_collection.find({'id': {'$in': invoice_ids}}))
+
+    # Calculer les totaux
+    total_ht = sum(inv.get('total_ht', 0) for inv in invoices)
+    total_tva = sum(inv.get('total_tva', 0) for inv in invoices)
+    total_ttc = sum(inv.get('total_ttc', 0) for inv in invoices)
+    paid_count = sum(1 for inv in invoices if inv.get('payment_status') == 'paid')
+    unpaid_count = len(invoices) - paid_count
+
+    # Nettoyer les ObjectId pour JSON
+    for inv in invoices:
+        if '_id' in inv:
+            del inv['_id']
+
+    return jsonify({
+        'success': True,
+        'invoices': invoices,
+        'summary': {
+            'count': len(invoices),
+            'total_ht': round(total_ht, 2),
+            'total_tva': round(total_tva, 2),
+            'total_ttc': round(total_ttc, 2),
+            'paid_count': paid_count,
+            'unpaid_count': unpaid_count
+        }
+    })
+
+
+@app.route('/api/history/bulk-download', methods=['POST'])
+@login_required
+def bulk_download():
+    """Télécharge plusieurs factures dans un fichier ZIP"""
+    import zipfile
+    from io import BytesIO
+
+    data = request.json
+    invoice_ids = data.get('ids', [])
+
+    if not invoice_ids:
+        return jsonify({'error': 'Aucune facture sélectionnée'}), 400
+
+    invoices = list(invoice_history_collection.find({'id': {'$in': invoice_ids}}))
+
+    if not invoices:
+        return jsonify({'error': 'Aucune facture trouvée'}), 404
+
+    # Créer le ZIP en mémoire
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for invoice in invoices:
+            batch_id = invoice.get('batch_id')
+            filename = invoice.get('filename')
+
+            if not batch_id or not filename:
+                continue
+
+            batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
+            filepath = os.path.join(batch_folder, filename)
+
+            if os.path.exists(filepath):
+                zip_file.write(filepath, filename)
+
+    zip_buffer.seek(0)
+
+    # Nom du fichier ZIP avec date
+    zip_filename = f"factures_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+
+    return send_file(
+        zip_buffer,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=zip_filename
+    )
+
+
+@app.route('/api/history/bulk-payment', methods=['POST'])
+@login_required
+def bulk_update_payment():
+    """Met à jour le statut de paiement de plusieurs factures"""
+    data = request.json
+    invoice_ids = data.get('ids', [])
+    status = data.get('status', 'paid')
+
+    if not invoice_ids:
+        return jsonify({'error': 'Aucune facture sélectionnée'}), 400
+
+    if status not in ['pending', 'paid']:
+        return jsonify({'error': 'Statut invalide'}), 400
+
+    updated_count = 0
+    for invoice_id in invoice_ids:
+        result = invoice_history_collection.update_one(
+            {'id': invoice_id},
+            {'$set': {'payment_status': status}}
+        )
+        if result.modified_count > 0:
+            updated_count += 1
+
+    status_text = 'payée(s)' if status == 'paid' else 'impayée(s)'
+    return jsonify({
+        'success': True,
+        'updated': updated_count,
+        'message': f'{updated_count} facture(s) marquée(s) comme {status_text}'
+    })
+
+
+@app.route('/api/history/bulk-reminder', methods=['POST'])
+@login_required
+def bulk_send_reminder():
+    """Envoie une relance pour plusieurs factures sélectionnées"""
+    data = request.json
+    invoice_ids = data.get('ids', [])
+    reminder_type = data.get('reminder_type', 1)
+
+    if not invoice_ids:
+        return jsonify({'error': 'Aucune facture sélectionnée'}), 400
+
+    if reminder_type not in [1, 2, 3, 4]:
+        return jsonify({'error': 'Type de relance invalide'}), 400
+
+    # Récupérer la config email
+    email_config = get_email_config()
+
+    # Récupérer les infos de l'utilisateur
+    user_data = users_collection.find_one({'_id': ObjectId(current_user.id)})
+    sender_name = user_data.get('sender_name', '') if user_data else ''
+    sender_email = user_data.get('sender_email', '') if user_data else ''
+
+    reminder_sent_key = f'reminder_{reminder_type}_sent'
+    reminder_at_key = f'reminder_{reminder_type}_at'
+    reminder_names = {1: 'Relance 1', 2: 'Relance 2', 3: 'Relance 3', 4: 'Relance 4'}
+
+    results = {'sent': 0, 'failed': 0, 'skipped': 0, 'details': []}
+
+    invoices = list(invoice_history_collection.find({'id': {'$in': invoice_ids}}))
+
+    for invoice in invoices:
+        invoice_id = invoice.get('id')
+
+        # Vérifier si payée
+        if invoice.get('payment_status') == 'paid':
+            results['skipped'] += 1
+            continue
+
+        # Vérifier si déjà envoyée
+        if invoice.get(reminder_sent_key):
+            results['skipped'] += 1
+            continue
+
+        # Vérifier si email présent
+        if not invoice.get('client_email'):
+            results['failed'] += 1
+            results['details'].append({
+                'invoice_number': invoice.get('invoice_number'),
+                'status': 'failed',
+                'message': 'Pas d\'adresse email'
+            })
+            continue
+
+        # Préparer les données
+        invoice_data = {
+            **invoice,
+            'company_name': invoice.get('client_name', invoice.get('shipper', ''))
+        }
+
+        batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{invoice.get('batch_id')}")
+
+        # Envoyer la relance
+        result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type, sender_name, sender_email)
+
+        if result['success']:
+            results['sent'] += 1
+            update_invoice_in_history(invoice_id, {
+                reminder_sent_key: True,
+                reminder_at_key: datetime.now().isoformat()
+            })
+        else:
+            results['failed'] += 1
+
+    return jsonify({
+        'success': True,
+        'results': results,
+        'message': f'{results["sent"]} relance(s) envoyée(s), {results["skipped"]} ignorée(s), {results["failed"]} échec(s)'
+    })
+
+
+# ============================================================================
 # Routes Clients
 # ============================================================================
 

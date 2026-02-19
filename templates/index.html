@@ -206,6 +206,59 @@
                     </div>
                     <div class="card-body">
                         <div class="history-stats" id="history-stats"></div>
+
+                        <!-- Barre d'actions multi-sélection -->
+                        <div class="bulk-actions-bar hidden" id="bulk-actions-bar">
+                            <div class="bulk-info">
+                                <span id="bulk-selected-count">0</span> facture(s) sélectionnée(s)
+                            </div>
+                            <div class="bulk-buttons">
+                                <button class="btn btn-sm btn-info" id="btn-bulk-info" title="Voir les informations">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                    </svg>
+                                    Infos
+                                </button>
+                                <button class="btn btn-sm btn-secondary" id="btn-bulk-download" title="Télécharger en ZIP">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="7 10 12 15 17 10"></polyline>
+                                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                                    </svg>
+                                    ZIP
+                                </button>
+                                <button class="btn btn-sm btn-success" id="btn-bulk-paid" title="Marquer comme payées">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                    Payées
+                                </button>
+                                <button class="btn btn-sm btn-warning" id="btn-bulk-unpaid" title="Marquer comme impayées">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    Impayées
+                                </button>
+                                <div class="btn-group">
+                                    <button class="btn btn-sm btn-reminder-1" id="btn-bulk-r1" title="Envoyer R1">R1</button>
+                                    <button class="btn btn-sm btn-reminder-2" id="btn-bulk-r2" title="Envoyer R2">R2</button>
+                                    <button class="btn btn-sm btn-reminder-3" id="btn-bulk-r3" title="Envoyer R3">R3</button>
+                                    <button class="btn btn-sm btn-reminder-4" id="btn-bulk-r4" title="Envoyer R4">R4</button>
+                                </div>
+                                <button class="btn btn-sm btn-danger" id="btn-bulk-delete" title="Supprimer">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    </svg>
+                                    Supprimer
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="history-table-container">
                             <table class="history-table" id="history-table">
                                 <thead>
@@ -662,6 +715,28 @@ Veuillez trouver ci-joint votre facture..."></textarea>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="btn-close-email-preview">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Infos Multi-sélection -->
+    <div class="modal hidden" id="bulk-info-modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>Informations des factures sélectionnées</h3>
+                <button class="modal-close" id="bulk-info-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="bulk-summary" id="bulk-summary">
+                    <!-- Rempli par JavaScript -->
+                </div>
+                <div class="bulk-invoices-list" id="bulk-invoices-list">
+                    <!-- Liste des factures -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-close-bulk-info">Fermer</button>
             </div>
         </div>
     </div>

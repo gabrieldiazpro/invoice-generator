@@ -1574,8 +1574,283 @@ if (selectAllHistory) {
     selectAllHistory.addEventListener('change', (e) => {
         const checkboxes = document.querySelectorAll('.history-checkbox:not(:disabled)');
         checkboxes.forEach(cb => cb.checked = e.target.checked);
+        updateBulkActionsBar();
     });
 }
+
+// Listen for individual checkbox changes (event delegation)
+document.getElementById('history-tbody')?.addEventListener('change', (e) => {
+    if (e.target.classList.contains('history-checkbox')) {
+        updateBulkActionsBar();
+    }
+});
+
+// ==========================================================================
+// Bulk Actions Functions
+// ==========================================================================
+
+function getSelectedInvoiceIds() {
+    const checkboxes = document.querySelectorAll('.history-checkbox:checked');
+    return Array.from(checkboxes).map(cb => decodeURIComponent(cb.dataset.id));
+}
+
+function updateBulkActionsBar() {
+    const selected = getSelectedInvoiceIds();
+    const bar = document.getElementById('bulk-actions-bar');
+    const countSpan = document.getElementById('bulk-selected-count');
+
+    if (selected.length > 0) {
+        bar.classList.remove('hidden');
+        countSpan.textContent = selected.length;
+    } else {
+        bar.classList.add('hidden');
+    }
+
+    // Update select all checkbox state
+    const allCheckboxes = document.querySelectorAll('.history-checkbox:not(:disabled)');
+    const allChecked = allCheckboxes.length > 0 && Array.from(allCheckboxes).every(cb => cb.checked);
+    const selectAll = document.getElementById('select-all-history');
+    if (selectAll) {
+        selectAll.checked = allChecked;
+        selectAll.indeterminate = selected.length > 0 && !allChecked;
+    }
+}
+
+// Bulk Info
+document.getElementById('btn-bulk-info')?.addEventListener('click', async () => {
+    const ids = getSelectedInvoiceIds();
+    if (ids.length === 0) return;
+
+    try {
+        const response = await fetch('/api/history/bulk-info', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showBulkInfoModal(data.invoices, data.summary);
+        }
+    } catch (error) {
+        showToast('Erreur lors du chargement des informations', 'error');
+    }
+});
+
+function showBulkInfoModal(invoices, summary) {
+    const modal = document.getElementById('bulk-info-modal');
+    const summaryDiv = document.getElementById('bulk-summary');
+    const listDiv = document.getElementById('bulk-invoices-list');
+
+    summaryDiv.innerHTML = `
+        <div class="bulk-summary-item">
+            <div class="bulk-summary-value">${summary.count}</div>
+            <div class="bulk-summary-label">Factures</div>
+        </div>
+        <div class="bulk-summary-item">
+            <div class="bulk-summary-value">${formatCurrency(summary.total_ht)}</div>
+            <div class="bulk-summary-label">Total HT</div>
+        </div>
+        <div class="bulk-summary-item">
+            <div class="bulk-summary-value">${formatCurrency(summary.total_tva)}</div>
+            <div class="bulk-summary-label">TVA</div>
+        </div>
+        <div class="bulk-summary-item">
+            <div class="bulk-summary-value">${formatCurrency(summary.total_ttc)}</div>
+            <div class="bulk-summary-label">Total TTC</div>
+        </div>
+        <div class="bulk-summary-item">
+            <div class="bulk-summary-value" style="color: var(--color-success)">${summary.paid_count}</div>
+            <div class="bulk-summary-label">Payées</div>
+        </div>
+        <div class="bulk-summary-item">
+            <div class="bulk-summary-value" style="color: var(--color-warning)">${summary.unpaid_count}</div>
+            <div class="bulk-summary-label">Impayées</div>
+        </div>
+    `;
+
+    listDiv.innerHTML = `
+        <table>
+            <thead>
+                <tr>
+                    <th>N° Facture</th>
+                    <th>Client</th>
+                    <th>Montant TTC</th>
+                    <th>Statut</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${invoices.map(inv => `
+                    <tr>
+                        <td>${escapeHtml(inv.invoice_number)}</td>
+                        <td>${escapeHtml(inv.client_name || inv.shipper)}</td>
+                        <td>${inv.total_ttc_formatted || formatCurrency(inv.total_ttc)}</td>
+                        <td>
+                            <span class="payment-badge ${inv.payment_status === 'paid' ? 'paid' : 'pending'}">
+                                ${inv.payment_status === 'paid' ? 'Payée' : 'Impayée'}
+                            </span>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+
+    modal.classList.remove('hidden');
+}
+
+// Bulk Info Modal close
+document.getElementById('bulk-info-modal-close')?.addEventListener('click', () => {
+    document.getElementById('bulk-info-modal').classList.add('hidden');
+});
+document.getElementById('btn-close-bulk-info')?.addEventListener('click', () => {
+    document.getElementById('bulk-info-modal').classList.add('hidden');
+});
+
+// Bulk Download (ZIP)
+document.getElementById('btn-bulk-download')?.addEventListener('click', async () => {
+    const ids = getSelectedInvoiceIds();
+    if (ids.length === 0) return;
+
+    try {
+        showToast('Préparation du téléchargement...', 'info');
+
+        const response = await fetch('/api/history/bulk-download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `factures_${new Date().toISOString().slice(0, 10)}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+            showToast(`${ids.length} facture(s) téléchargée(s)`, 'success');
+        } else {
+            showToast('Erreur lors du téléchargement', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors du téléchargement', 'error');
+    }
+});
+
+// Bulk Mark as Paid
+document.getElementById('btn-bulk-paid')?.addEventListener('click', async () => {
+    const ids = getSelectedInvoiceIds();
+    if (ids.length === 0) return;
+
+    if (!confirm(`Marquer ${ids.length} facture(s) comme payée(s) ?`)) return;
+
+    try {
+        const response = await fetch('/api/history/bulk-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, status: 'paid' })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadHistory();
+        } else {
+            showToast(data.error || 'Erreur', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de la mise à jour', 'error');
+    }
+});
+
+// Bulk Mark as Unpaid
+document.getElementById('btn-bulk-unpaid')?.addEventListener('click', async () => {
+    const ids = getSelectedInvoiceIds();
+    if (ids.length === 0) return;
+
+    if (!confirm(`Marquer ${ids.length} facture(s) comme impayée(s) ?`)) return;
+
+    try {
+        const response = await fetch('/api/history/bulk-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, status: 'pending' })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadHistory();
+        } else {
+            showToast(data.error || 'Erreur', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de la mise à jour', 'error');
+    }
+});
+
+// Bulk Delete
+document.getElementById('btn-bulk-delete')?.addEventListener('click', async () => {
+    const ids = getSelectedInvoiceIds();
+    if (ids.length === 0) return;
+
+    if (!confirm(`Supprimer définitivement ${ids.length} facture(s) de l'historique ?`)) return;
+
+    try {
+        const response = await fetch('/api/history/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadHistory();
+        } else {
+            showToast(data.error || 'Erreur', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de la suppression', 'error');
+    }
+});
+
+// Bulk Send Reminders (R1, R2, R3, R4)
+async function bulkSendReminder(reminderType) {
+    const ids = getSelectedInvoiceIds();
+    if (ids.length === 0) return;
+
+    const reminderNames = { 1: 'Relance 1', 2: 'Relance 2', 3: 'Relance 3', 4: 'Relance 4 (Coupure)' };
+    if (!confirm(`Envoyer ${reminderNames[reminderType]} à ${ids.length} facture(s) sélectionnée(s) ?`)) return;
+
+    try {
+        showToast('Envoi des relances en cours...', 'info');
+
+        const response = await fetch('/api/history/bulk-reminder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, reminder_type: reminderType })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadHistory();
+        } else {
+            showToast(data.error || 'Erreur', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de l\'envoi des relances', 'error');
+    }
+}
+
+document.getElementById('btn-bulk-r1')?.addEventListener('click', () => bulkSendReminder(1));
+document.getElementById('btn-bulk-r2')?.addEventListener('click', () => bulkSendReminder(2));
+document.getElementById('btn-bulk-r3')?.addEventListener('click', () => bulkSendReminder(3));
+document.getElementById('btn-bulk-r4')?.addEventListener('click', () => bulkSendReminder(4));
 
 // Reminder results modal close
 const reminderResultsModal = document.getElementById('reminder-results-modal');

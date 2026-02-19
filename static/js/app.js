@@ -1346,13 +1346,19 @@ function showDuplicatesModal(duplicates, newCount) {
             <button class="btn btn-sm btn-primary" onclick="setAllDuplicateActions('update')">Tout mettre à jour</button>
         </div>
         <div class="duplicates-list">
-            ${duplicates.map((dup, index) => `
-                <div class="duplicate-item" data-nom="${encodeURIComponent(dup.nom)}">
+            ${duplicates.map((dup, index) => {
+                const isFuzzy = dup.is_fuzzy_match;
+                const existingKey = dup.existing_key || dup.nom;
+                return `
+                <div class="duplicate-item ${isFuzzy ? 'fuzzy-match' : ''}" data-nom="${encodeURIComponent(dup.nom)}">
                     <div class="duplicate-info">
-                        <div class="duplicate-name">${dup.nom}</div>
+                        <div class="duplicate-name">
+                            ${dup.nom}
+                            ${isFuzzy ? `<span class="fuzzy-badge" title="Match approximatif avec '${existingKey}'">≈ ${existingKey}</span>` : ''}
+                        </div>
                         <div class="duplicate-comparison">
                             <div class="duplicate-existing">
-                                <span class="label">Existant:</span>
+                                <span class="label">Existant${isFuzzy ? ` (${existingKey})` : ''}:</span>
                                 <span class="value">${dup.existing_data.email || 'Pas d\'email'} | ${dup.existing_data.siret || 'Pas de SIRET'}</span>
                             </div>
                             <div class="duplicate-new">
@@ -1369,7 +1375,7 @@ function showDuplicatesModal(duplicates, newCount) {
                         </select>
                     </div>
                 </div>
-            `).join('')}
+            `}).join('')}
         </div>
         <div class="duplicates-footer">
             <button class="btn btn-secondary" onclick="cancelImport()">Annuler</button>

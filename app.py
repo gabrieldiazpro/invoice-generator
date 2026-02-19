@@ -3485,7 +3485,10 @@ def import_clients():
                 'error': 'Colonne "nom" non trouvée. Colonnes détectées: ' + ', '.join(df.columns.tolist())
             }), 400
 
-        # Analyser les données et détecter les doublons
+        # Charger tous les clients existants pour le matching fuzzy
+        all_existing_clients = {doc['_id']: doc for doc in clients_collection.find()}
+
+        # Analyser les données et détecter les doublons (avec matching intelligent)
         duplicates = []
         new_clients = []
 
@@ -3494,12 +3497,25 @@ def import_clients():
             if not nom:
                 continue
 
-            existing = clients_collection.find_one({'_id': nom})
+            # 1. Vérifier match exact
+            existing = all_existing_clients.get(nom)
+            existing_key = nom
+
+            # 2. Si pas de match exact, chercher par similarité
+            if not existing:
+                matched_key, matched_info, score = find_best_client_match(nom, all_existing_clients, threshold=0.6)
+                if matched_info and score >= 0.6:
+                    existing = matched_info
+                    existing_key = matched_key
+                    logger.info(f"Import fuzzy match: '{nom}' → '{matched_key}' (score: {score:.2f})")
+
             if existing:
                 duplicates.append({
                     'nom': nom,
+                    'existing_key': existing_key,  # Clé du client existant (peut être différente)
                     'new_data': client_data,
-                    'existing_data': {k: v for k, v in existing.items() if k != '_id'}
+                    'existing_data': {k: v for k, v in existing.items() if k != '_id'},
+                    'is_fuzzy_match': existing_key != nom  # Indique si c'est un match approximatif
                 })
             else:
                 new_clients.append(client_data)
@@ -3535,23 +3551,30 @@ def import_clients():
         # Traiter les doublons selon les décisions
         for dup in duplicates:
             nom = dup['nom']
+            existing_key = dup.get('existing_key', nom)  # Utiliser la clé existante si disponible
             decision = decisions.get(nom, 'skip')  # Par défaut: ignorer
 
             if decision == 'add':
-                # Ajouter comme nouveau (avec suffixe)
-                new_nom = f"{nom} (import)"
-                client_data = dup['new_data']
-                client_data['_id'] = new_nom
-                client_data['nom'] = new_nom
+                # Ajouter comme nouveau (avec le nom de l'import)
+                client_data = dup['new_data'].copy()
                 try:
                     clients_collection.insert_one(client_data)
                     results['created'] += 1
                 except:
-                    results['skipped'] += 1
+                    # Si le nom existe déjà, ajouter un suffixe
+                    client_data['_id'] = f"{nom} (import)"
+                    client_data['nom'] = f"{nom} (import)"
+                    try:
+                        clients_collection.insert_one(client_data)
+                        results['created'] += 1
+                    except:
+                        results['skipped'] += 1
             elif decision == 'update':
-                # Mettre à jour l'existant
+                # Mettre à jour l'existant (utiliser la clé existante, pas le nom importé)
                 try:
-                    clients_collection.replace_one({'_id': nom}, dup['new_data'], upsert=True)
+                    update_data = dup['new_data'].copy()
+                    update_data['_id'] = existing_key  # Garder la clé existante
+                    clients_collection.replace_one({'_id': existing_key}, update_data, upsert=True)
                     results['updated'] += 1
                 except Exception as e:
                     results['errors'].append({'nom': nom, 'error': str(e)})

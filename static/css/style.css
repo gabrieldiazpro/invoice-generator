@@ -2562,3 +2562,20 @@ body.impersonating .header {
     padding-top: var(--spacing-md);
     border-top: 1px solid var(--color-gray-200);
 }
+
+/* Fuzzy match indicator */
+.duplicate-item.fuzzy-match {
+    border-color: var(--color-warning);
+    background-color: rgba(245, 158, 11, 0.05);
+}
+
+.fuzzy-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 2px 6px;
+    margin-left: var(--spacing-xs);
+    background-color: var(--color-warning-light);
+    color: #92400e;
+    border-radius: var(--radius-sm);
+}

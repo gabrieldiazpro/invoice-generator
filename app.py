@@ -3356,10 +3356,30 @@ def parse_import_file(filepath, ext):
         if df is None or len(df.columns) <= 1:
             return None, "Impossible de lire le fichier CSV"
     else:
-        df = pd.read_excel(filepath)
-        unnamed_cols = sum(1 for col in df.columns if 'unnamed' in str(col).lower())
-        if unnamed_cols > len(df.columns) / 2:
-            df = pd.read_excel(filepath, header=2)
+        # Essayer plusieurs lignes d'en-tête et choisir la meilleure
+        best_df = None
+        best_unnamed = float('inf')
+        best_header = 0
+
+        for header_row in [0, 1, 2, 3, 4, 5]:
+            try:
+                df = pd.read_excel(filepath, header=header_row)
+                unnamed = sum(1 for col in df.columns if 'unnamed' in str(col).lower())
+                if unnamed < best_unnamed:
+                    best_unnamed = unnamed
+                    best_df = df
+                    best_header = header_row
+                # Si on a trouvé une ligne avec très peu d'unnamed, on s'arrête
+                if unnamed <= 2:
+                    break
+            except:
+                continue
+
+        df = best_df
+        logger.info(f"Excel import: using header row {best_header} with {best_unnamed} unnamed columns")
+
+        if df is None:
+            return None, "Impossible de lire le fichier Excel"
 
     return df, None
 

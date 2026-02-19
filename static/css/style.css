@@ -2103,6 +2103,22 @@ body.impersonating .header {
     min-width: 80px;
 }
 
+.stat-card.mini.clickable {
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    border: 2px solid transparent;
+}
+
+.stat-card.mini.clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card.mini.clickable.active {
+    border-color: var(--color-primary);
+    background-color: rgba(48, 38, 240, 0.05);
+}
+
 .stat-card.mini .stat-value {
     font-size: 1.25rem;
 }

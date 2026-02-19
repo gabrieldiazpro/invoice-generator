@@ -894,23 +894,34 @@ function updateClientsStats() {
     const duplicates = detectDuplicates();
 
     statsContainer.innerHTML = `
-        <div class="stat-card mini">
+        <div class="stat-card mini clickable ${clientsFilterValue === 'all' ? 'active' : ''}" data-filter="all">
             <div class="stat-value">${total}</div>
             <div class="stat-label">Total</div>
         </div>
-        <div class="stat-card mini">
+        <div class="stat-card mini clickable ${clientsFilterValue === 'complete' ? 'active' : ''}" data-filter="complete">
             <div class="stat-value" style="color: var(--color-success)">${complete}</div>
             <div class="stat-label">Complets</div>
         </div>
-        <div class="stat-card mini">
+        <div class="stat-card mini clickable ${clientsFilterValue === 'incomplete' ? 'active' : ''}" data-filter="incomplete">
             <div class="stat-value" style="color: var(--color-warning)">${incomplete}</div>
             <div class="stat-label">Incomplets</div>
         </div>
-        <div class="stat-card mini">
+        <div class="stat-card mini clickable ${clientsFilterValue === 'duplicates' ? 'active' : ''}" data-filter="duplicates">
             <div class="stat-value" style="color: var(--color-danger)">${duplicates}</div>
             <div class="stat-label">Doublons</div>
         </div>
     `;
+
+    // Attach click handlers
+    statsContainer.querySelectorAll('[data-filter]').forEach(card => {
+        card.addEventListener('click', () => {
+            clientsFilterValue = card.dataset.filter;
+            // Update dropdown to match
+            const filterSelect = document.getElementById('clients-filter');
+            if (filterSelect) filterSelect.value = clientsFilterValue;
+            applyClientsFilter();
+        });
+    });
 }
 
 function renderClients(clients) {

@@ -1045,6 +1045,171 @@ window.deleteClient = async function(key) {
 };
 
 // ============================================================================
+// Client Import
+// ============================================================================
+
+const importClientsModal = document.getElementById('import-clients-modal');
+const importUploadZone = document.getElementById('import-upload-zone');
+const importClientsFile = document.getElementById('import-clients-file');
+
+// Open import modal
+document.getElementById('btn-import-clients')?.addEventListener('click', () => {
+    // Reset modal state
+    document.getElementById('import-info').classList.remove('hidden');
+    document.getElementById('import-progress').classList.add('hidden');
+    document.getElementById('import-results').classList.add('hidden');
+    importClientsFile.value = '';
+    importClientsModal.classList.remove('hidden');
+});
+
+// Close modal handlers
+document.getElementById('import-clients-modal-close')?.addEventListener('click', () => {
+    importClientsModal.classList.add('hidden');
+});
+
+document.getElementById('btn-cancel-import')?.addEventListener('click', () => {
+    importClientsModal.classList.add('hidden');
+});
+
+// Download template button
+document.getElementById('btn-download-template')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    window.location.href = '/api/clients/template';
+});
+
+// File upload zone
+importUploadZone?.addEventListener('click', () => importClientsFile?.click());
+
+importUploadZone?.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    importUploadZone.classList.add('dragover');
+});
+
+importUploadZone?.addEventListener('dragleave', () => {
+    importUploadZone.classList.remove('dragover');
+});
+
+importUploadZone?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    importUploadZone.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleClientsImport(files[0]);
+    }
+});
+
+importClientsFile?.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+        handleClientsImport(e.target.files[0]);
+    }
+});
+
+async function handleClientsImport(file) {
+    const validExtensions = ['.csv', '.xlsx', '.xls'];
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+
+    if (!validExtensions.includes(ext)) {
+        showToast('Format non supporté. Utilisez CSV ou Excel (.xlsx, .xls)', 'error');
+        return;
+    }
+
+    // Show progress
+    document.getElementById('import-info').classList.add('hidden');
+    document.getElementById('import-progress').classList.remove('hidden');
+    document.getElementById('import-results').classList.add('hidden');
+    document.getElementById('import-progress-text').textContent = 'Import en cours...';
+    document.getElementById('import-progress-fill').style.width = '50%';
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('update_existing', document.getElementById('import-update-existing')?.checked ? 'true' : 'false');
+
+    try {
+        const response = await fetch('/api/clients/import', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        document.getElementById('import-progress-fill').style.width = '100%';
+        document.getElementById('import-progress-text').textContent = 'Terminé';
+
+        // Show results after short delay
+        setTimeout(() => {
+            document.getElementById('import-progress').classList.add('hidden');
+            document.getElementById('import-results').classList.remove('hidden');
+
+            if (data.success) {
+                const results = data.results;
+                document.getElementById('import-results-summary').innerHTML = `
+                    <div class="import-summary-stats">
+                        <div class="import-stat success">
+                            <span class="import-stat-value">${results.created}</span>
+                            <span class="import-stat-label">Créés</span>
+                        </div>
+                        <div class="import-stat info">
+                            <span class="import-stat-value">${results.updated}</span>
+                            <span class="import-stat-label">Mis à jour</span>
+                        </div>
+                        <div class="import-stat warning">
+                            <span class="import-stat-value">${results.skipped}</span>
+                            <span class="import-stat-label">Ignorés</span>
+                        </div>
+                        <div class="import-stat ${results.errors.length > 0 ? 'danger' : ''}">
+                            <span class="import-stat-value">${results.errors.length}</span>
+                            <span class="import-stat-label">Erreurs</span>
+                        </div>
+                    </div>
+                `;
+
+                if (results.errors.length > 0) {
+                    document.getElementById('import-results-details').innerHTML = `
+                        <div class="import-errors">
+                            <h4>Erreurs détectées :</h4>
+                            <ul>
+                                ${results.errors.slice(0, 10).map(err => `
+                                    <li>Ligne ${err.row}: ${err.error}${err.nom ? ` (${err.nom})` : ''}</li>
+                                `).join('')}
+                                ${results.errors.length > 10 ? `<li>... et ${results.errors.length - 10} autres erreurs</li>` : ''}
+                            </ul>
+                        </div>
+                    `;
+                } else {
+                    document.getElementById('import-results-details').innerHTML = '';
+                }
+
+                showToast(data.message, 'success');
+                loadClients(); // Refresh clients list
+            } else {
+                document.getElementById('import-results-summary').innerHTML = `
+                    <div class="import-error-message">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                        </svg>
+                        <p>${data.error}</p>
+                    </div>
+                `;
+                document.getElementById('import-results-details').innerHTML = '';
+                showToast(data.error, 'error');
+            }
+        }, 500);
+
+    } catch (error) {
+        document.getElementById('import-progress').classList.add('hidden');
+        document.getElementById('import-results').classList.remove('hidden');
+        document.getElementById('import-results-summary').innerHTML = `
+            <div class="import-error-message">
+                <p>Erreur lors de l'import: ${error.message}</p>
+            </div>
+        `;
+        showToast('Erreur lors de l\'import', 'error');
+    }
+}
+
+// ============================================================================
 // Client Account Management
 // ============================================================================
 

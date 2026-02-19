@@ -3223,6 +3223,200 @@ def delete_client(client_name):
     return jsonify({'success': True})
 
 
+@app.route('/api/clients/import', methods=['POST'])
+@login_required
+def import_clients():
+    """Importe des clients depuis un fichier CSV ou Excel"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'Aucun fichier fourni'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'Aucun fichier sélectionné'}), 400
+
+    filename = secure_filename(file.filename)
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+
+    if ext not in ['csv', 'xlsx', 'xls']:
+        return jsonify({'error': 'Format non supporté. Utilisez CSV ou Excel (.xlsx, .xls)'}), 400
+
+    update_existing = request.form.get('update_existing', 'true').lower() == 'true'
+
+    # Sauvegarder temporairement le fichier
+    unique_filename = f"{uuid.uuid4().hex}_{filename}"
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+    file.save(filepath)
+
+    try:
+        # Lire le fichier selon le format
+        if ext == 'csv':
+            import pandas as pd
+            # Essayer plusieurs séparateurs et encodages
+            df = None
+            for sep in [';', ',', '\t']:
+                for encoding in ['utf-8', 'latin-1', 'cp1252']:
+                    try:
+                        df = pd.read_csv(filepath, sep=sep, encoding=encoding)
+                        if len(df.columns) > 1:
+                            break
+                    except:
+                        continue
+                if df is not None and len(df.columns) > 1:
+                    break
+
+            if df is None or len(df.columns) <= 1:
+                return jsonify({'error': 'Impossible de lire le fichier CSV'}), 400
+        else:
+            import pandas as pd
+            df = pd.read_excel(filepath)
+
+        # Mapping des colonnes (insensible à la casse, avec alternatives)
+        column_mappings = {
+            'nom': ['nom', 'name', 'raison_sociale', 'raison sociale', 'société', 'societe', 'client', 'shipper'],
+            'adresse': ['adresse', 'address', 'rue', 'street'],
+            'code_postal': ['code_postal', 'cp', 'postal_code', 'zip', 'zipcode', 'code postal'],
+            'ville': ['ville', 'city', 'town'],
+            'pays': ['pays', 'country'],
+            'email': ['email', 'mail', 'e-mail', 'courriel'],
+            'siret': ['siret', 'siren', 'numero_siret', 'n° siret', 'n siret']
+        }
+
+        # Normaliser les noms de colonnes
+        df.columns = [str(col).lower().strip() for col in df.columns]
+
+        # Créer un mapping des colonnes du fichier vers les colonnes attendues
+        found_columns = {}
+        for target_col, variants in column_mappings.items():
+            for variant in variants:
+                if variant in df.columns:
+                    found_columns[target_col] = variant
+                    break
+
+        # Vérifier que la colonne nom est présente
+        if 'nom' not in found_columns:
+            return jsonify({
+                'error': 'Colonne "nom" non trouvée. Colonnes détectées: ' + ', '.join(df.columns.tolist())
+            }), 400
+
+        # Traiter les données
+        results = {
+            'total': 0,
+            'created': 0,
+            'updated': 0,
+            'skipped': 0,
+            'errors': []
+        }
+
+        for index, row in df.iterrows():
+            results['total'] += 1
+
+            # Récupérer le nom (requis)
+            nom_col = found_columns['nom']
+            nom = str(row.get(nom_col, '')).strip()
+
+            if not nom or nom == 'nan':
+                results['skipped'] += 1
+                results['errors'].append({
+                    'row': index + 2,
+                    'error': 'Nom manquant'
+                })
+                continue
+
+            # Vérifier si le client existe déjà
+            existing = clients_collection.find_one({'_id': nom})
+
+            if existing and not update_existing:
+                results['skipped'] += 1
+                continue
+
+            # Construire les données du client
+            client_data = {
+                '_id': nom,
+                'nom': nom,
+                'adresse': str(row.get(found_columns.get('adresse', ''), '')).strip() if found_columns.get('adresse') else 'Adresse à compléter',
+                'code_postal': str(row.get(found_columns.get('code_postal', ''), '')).strip() if found_columns.get('code_postal') else '00000',
+                'ville': str(row.get(found_columns.get('ville', ''), '')).strip() if found_columns.get('ville') else 'Ville',
+                'pays': str(row.get(found_columns.get('pays', ''), '')).strip() if found_columns.get('pays') else 'France',
+                'email': str(row.get(found_columns.get('email', ''), '')).strip() if found_columns.get('email') else 'email@example.com',
+                'siret': str(row.get(found_columns.get('siret', ''), '')).strip() if found_columns.get('siret') else '00000000000000'
+            }
+
+            # Nettoyer les valeurs 'nan'
+            for key in client_data:
+                if client_data[key] == 'nan':
+                    if key == 'pays':
+                        client_data[key] = 'France'
+                    elif key == 'code_postal':
+                        client_data[key] = '00000'
+                    elif key == 'siret':
+                        client_data[key] = '00000000000000'
+                    elif key == 'email':
+                        client_data[key] = 'email@example.com'
+                    elif key == 'adresse':
+                        client_data[key] = 'Adresse à compléter'
+                    elif key == 'ville':
+                        client_data[key] = 'Ville'
+
+            # Nettoyer le SIRET (garder seulement les chiffres)
+            siret = ''.join(c for c in client_data['siret'] if c.isdigit())
+            if len(siret) > 14:
+                siret = siret[:14]
+            client_data['siret'] = siret if siret else '00000000000000'
+
+            # Sauvegarder dans MongoDB
+            try:
+                clients_collection.replace_one({'_id': nom}, client_data, upsert=True)
+                if existing:
+                    results['updated'] += 1
+                else:
+                    results['created'] += 1
+            except Exception as e:
+                results['errors'].append({
+                    'row': index + 2,
+                    'nom': nom,
+                    'error': str(e)
+                })
+
+        # Supprimer le fichier temporaire
+        os.remove(filepath)
+
+        return jsonify({
+            'success': True,
+            'results': results,
+            'message': f"{results['created']} client(s) créé(s), {results['updated']} mis à jour, {results['skipped']} ignoré(s)"
+        })
+
+    except Exception as e:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        logger.error(f"Erreur import clients: {e}")
+        return jsonify({'error': f'Erreur lors du traitement: {str(e)}'}), 500
+
+
+@app.route('/api/clients/template')
+@login_required
+def download_clients_template():
+    """Génère et télécharge un template CSV pour l'import de clients"""
+    import io
+
+    # Créer le contenu CSV
+    csv_content = "nom;adresse;code_postal;ville;pays;email;siret\n"
+    csv_content += "Exemple SARL;12 rue de la Paix;75001;Paris;France;contact@exemple.com;12345678901234\n"
+    csv_content += "Autre Client SAS;5 avenue des Champs;69001;Lyon;France;info@autre.fr;98765432109876\n"
+
+    # Créer le fichier en mémoire
+    buffer = io.BytesIO()
+    buffer.write(csv_content.encode('utf-8-sig'))  # UTF-8 avec BOM pour Excel
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name='template_clients.csv'
+    )
+
+
 # ============================================================================
 # Portail Client - Routes et fonctions
 # ============================================================================

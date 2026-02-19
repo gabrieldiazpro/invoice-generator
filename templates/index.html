@@ -302,13 +302,23 @@
                     <div class="card-header clients-header-column">
                         <div class="clients-header-row">
                             <h2>Liste des clients</h2>
-                            <button class="btn btn-primary btn-sm" id="btn-add-client">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                                </svg>
-                                Ajouter
-                            </button>
+                            <div class="header-buttons">
+                                <button class="btn btn-secondary btn-sm" id="btn-import-clients">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="17 8 12 3 7 8"></polyline>
+                                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                                    </svg>
+                                    Importer
+                                </button>
+                                <button class="btn btn-primary btn-sm" id="btn-add-client">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                    Ajouter
+                                </button>
+                            </div>
                         </div>
                         <div class="clients-stats" id="clients-stats"></div>
                         <div class="clients-filters">
@@ -755,6 +765,77 @@ Veuillez trouver ci-joint votre facture..."></textarea>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="btn-close-bulk-info">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Import Clients -->
+    <div class="modal hidden" id="import-clients-modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Importer des clients</h3>
+                <button class="modal-close" id="import-clients-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="import-info" id="import-info">
+                    <p>Importez vos clients depuis un fichier <strong>CSV</strong> ou <strong>Excel</strong>.</p>
+
+                    <div class="import-format-info">
+                        <h4>Format requis</h4>
+                        <p>Le fichier doit contenir les colonnes suivantes :</p>
+                        <ul class="format-columns">
+                            <li><strong>nom</strong> - Nom complet du client (requis)</li>
+                            <li><strong>adresse</strong> - Adresse postale</li>
+                            <li><strong>code_postal</strong> - Code postal</li>
+                            <li><strong>ville</strong> - Ville</li>
+                            <li><strong>pays</strong> - Pays (défaut: France)</li>
+                            <li><strong>email</strong> - Adresse email</li>
+                            <li><strong>siret</strong> - Numéro SIRET (14 chiffres)</li>
+                        </ul>
+                    </div>
+
+                    <div class="import-upload-zone" id="import-upload-zone">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p>Glissez-déposez votre fichier ici</p>
+                        <span>ou cliquez pour sélectionner</span>
+                        <input type="file" id="import-clients-file" accept=".csv,.xlsx,.xls" hidden>
+                    </div>
+
+                    <div class="import-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="import-update-existing" checked>
+                            Mettre à jour les clients existants
+                        </label>
+                    </div>
+                </div>
+
+                <div class="import-progress hidden" id="import-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="import-progress-fill"></div>
+                    </div>
+                    <p class="progress-text" id="import-progress-text">Import en cours...</p>
+                </div>
+
+                <div class="import-results hidden" id="import-results">
+                    <div class="import-results-summary" id="import-results-summary"></div>
+                    <div class="import-results-details" id="import-results-details"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-import">Fermer</button>
+                <a href="#" class="btn btn-link" id="btn-download-template" download>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Template CSV
+                </a>
             </div>
         </div>
     </div>

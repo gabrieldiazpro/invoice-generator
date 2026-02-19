@@ -803,6 +803,13 @@ async function loadClients() {
     }
 }
 
+function isClientComplete(client) {
+    // Un client est complet s'il a un SIRET valide ET un email valide
+    const hasValidSiret = client.siret && client.siret !== '00000000000000';
+    const hasValidEmail = client.email && client.email.includes('@') && client.email !== 'email@example.com';
+    return hasValidSiret && hasValidEmail;
+}
+
 function applyClientsFilter() {
     const searchLower = clientsSearchTerm.toLowerCase();
 
@@ -816,9 +823,7 @@ function applyClientsFilter() {
             (client.siret && client.siret.includes(searchLower));
 
         // Status filter
-        const isComplete = client.siret && client.siret !== '00000000000000' &&
-                          client.email && client.email.includes('@') &&
-                          client.adresse && client.adresse !== 'Adresse à compléter';
+        const isComplete = isClientComplete(client);
 
         const matchesFilter = clientsFilterValue === 'all' ||
             (clientsFilterValue === 'complete' && isComplete) ||
@@ -836,10 +841,7 @@ function updateClientsStats() {
     if (!statsContainer) return;
 
     const total = Object.keys(allClientsData).length;
-    const complete = Object.values(allClientsData).filter(c =>
-        c.siret && c.siret !== '00000000000000' &&
-        c.email && c.email.includes('@')
-    ).length;
+    const complete = Object.values(allClientsData).filter(c => isClientComplete(c)).length;
     const incomplete = total - complete;
 
     statsContainer.innerHTML = `
@@ -870,8 +872,7 @@ function renderClients(clients) {
     if (emptyState) emptyState.classList.add('hidden');
 
     clientsGrid.innerHTML = Object.entries(clients).map(([key, client]) => {
-        const isComplete = client.siret && client.siret !== '00000000000000';
-        const hasEmail = client.email && client.email.includes('@');
+        const isComplete = isClientComplete(client);
         const safeKey = encodeURIComponent(key);
 
         return `
@@ -902,8 +903,8 @@ function renderClients(clients) {
                     <p>${client.email ? escapeHtml(client.email) : 'Pas d\'email'}</p>
                     <p>SIRET: ${escapeHtml(client.siret)}</p>
                 </div>
-                <div class="client-status ${isComplete && hasEmail ? 'complete' : 'incomplete'}">
-                    ${isComplete && hasEmail ? '✓ Complet' : '⚠ Informations manquantes'}
+                <div class="client-status ${isComplete ? 'complete' : 'incomplete'}">
+                    ${isComplete ? '✓ Complet' : '⚠ Informations manquantes'}
                 </div>
                 <div class="client-account-section" data-client-key="${safeKey}">
                     ${renderAccountStatus(key, client.account_status, safeKey)}

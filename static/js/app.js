@@ -287,6 +287,10 @@ function renderInvoicesList(invoices) {
             emailButton = `<button class="btn btn-send-email btn-sm" onclick="sendSingleEmail('${inv.invoice_number}')">Envoyer</button>`;
         }
 
+        // Utiliser company_name (nom de la fiche client) si disponible
+        const displayName = inv.company_name || inv.shipper;
+        const showBothNames = inv.company_name && inv.company_name !== inv.shipper;
+
         return `
             <div class="invoice-item" data-invoice="${inv.invoice_number}">
                 <div class="invoice-icon">
@@ -296,8 +300,8 @@ function renderInvoicesList(invoices) {
                     </svg>
                 </div>
                 <div class="invoice-info">
-                    <div class="invoice-name">${inv.shipper}</div>
-                    <div class="invoice-number">${inv.invoice_number}${inv.client_email ? ' • ' + inv.client_email : ''}</div>
+                    <div class="invoice-name">${displayName}</div>
+                    <div class="invoice-number">${inv.invoice_number}${showBothNames ? ' • CSV: ' + inv.shipper : ''}${inv.client_email ? ' • ' + inv.client_email : ''}</div>
                 </div>
                 ${emailStatus}
                 <div class="invoice-total">${inv.total_ttc_formatted}</div>

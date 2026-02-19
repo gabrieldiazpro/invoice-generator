@@ -2133,6 +2133,11 @@ def generate_invoices():
                 for row in rows
             )
 
+            # Récupérer l'email (filtrer les placeholders)
+            client_email = client_info.get('email', '')
+            if client_email == 'email@example.com':
+                client_email = ''
+
             invoice_data = {
                 'shipper': shipper_name,
                 'invoice_number': invoice_number,
@@ -2143,7 +2148,7 @@ def generate_invoices():
                 'total_ht_formatted': format_currency(total_ht),
                 'client_name': shipper_name,
                 'company_name': client_info.get('nom', shipper_name),
-                'client_email': client_info.get('email', ''),
+                'client_email': client_email,
                 'period': period,
                 'email_sent': False
             }

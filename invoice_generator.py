@@ -74,33 +74,184 @@ def get_client_info(shipper_name, clients_config):
     return default_client
 
 
+def find_best_column_match(fieldnames, target_names, threshold=0.6):
+    """
+    Trouve la meilleure correspondance de colonne parmi les noms de champs.
+
+    Args:
+        fieldnames: Liste des noms de colonnes du CSV
+        target_names: Liste des noms possibles à rechercher (par priorité)
+        threshold: Seuil de similarité minimum (0-1)
+
+    Returns:
+        Le nom de la colonne trouvée ou None
+    """
+    if not fieldnames:
+        return None
+
+    # Normalise les noms de colonnes pour comparaison
+    def normalize(s):
+        return s.lower().strip().replace('_', '').replace('-', '').replace(' ', '')
+
+    normalized_fields = {normalize(f): f for f in fieldnames}
+
+    # 1. Recherche exacte (insensible à la casse)
+    for target in target_names:
+        norm_target = normalize(target)
+        if norm_target in normalized_fields:
+            return normalized_fields[norm_target]
+
+    # 2. Recherche par inclusion (le nom cible est contenu dans le champ)
+    for target in target_names:
+        norm_target = normalize(target)
+        for norm_field, original_field in normalized_fields.items():
+            if norm_target in norm_field or norm_field in norm_target:
+                return original_field
+
+    # 3. Similarité de Levenshtein simplifiée
+    def similarity(s1, s2):
+        """Calcule un score de similarité simple entre deux chaînes."""
+        s1, s2 = normalize(s1), normalize(s2)
+        if not s1 or not s2:
+            return 0
+
+        # Score basé sur les caractères communs
+        common = sum(1 for c in s1 if c in s2)
+        return (2.0 * common) / (len(s1) + len(s2))
+
+    best_match = None
+    best_score = threshold
+
+    for target in target_names:
+        for field in fieldnames:
+            score = similarity(target, field)
+            if score > best_score:
+                best_score = score
+                best_match = field
+
+    return best_match
+
+
+# Mapping des colonnes attendues vers leurs variations possibles
+COLUMN_MAPPINGS = {
+    'shipper': ['Shipper', 'ShipperName', 'SipperName', 'Sipper', 'Client', 'Expéditeur',
+                'Expediteur', 'CustomerName', 'Customer', 'Nom Client', 'NomClient',
+                'Société', 'Societe', 'Company', 'Account', 'Compte'],
+    'carrier': ['Carrier name or Supplement', 'Carrier', 'Transporteur', 'CarrierName'],
+    'method': ['PP Shipping method', 'Shipping method', 'Method', 'Méthode', 'Service'],
+    'weight': ['Weight range', 'Weight', 'Poids', 'Tranche'],
+    'service': ['Shipper Service', 'Service', 'ShipperService'],
+    'quantity': ['Quantité', 'Quantity', 'Qty', 'Qté', 'Nombre', 'Count'],
+    'price': ['Prix', 'Price', 'Montant', 'Amount', 'PU', 'Prix Unitaire', 'Unit Price'],
+    'start_date': ['Invoice Staring date', 'Invoice Starting date', 'Start Date', 'StartDate',
+                   'Date Début', 'DateDebut', 'From', 'Du'],
+    'end_date': ['Invoice Ending date', 'End Date', 'EndDate', 'Date Fin', 'DateFin', 'To', 'Au'],
+    'tva': ['TVA en %', 'TVA', 'VAT', 'Tax', 'Taxe', 'TVA %'],
+    'invoice_num': ['Invoice Num', 'InvoiceNum', 'Invoice Number', 'Numéro Facture', 'NumFacture']
+}
+
+
+def map_csv_columns(fieldnames):
+    """
+    Crée un mapping entre les colonnes standards et les colonnes réelles du CSV.
+
+    Returns:
+        Dict avec les noms standards comme clés et les noms réels comme valeurs
+    """
+    mapping = {}
+    for standard_name, variations in COLUMN_MAPPINGS.items():
+        found = find_best_column_match(fieldnames, variations)
+        if found:
+            mapping[standard_name] = found
+    return mapping
+
+
+def normalize_row(row, column_mapping):
+    """
+    Normalise une ligne CSV en utilisant le mapping de colonnes.
+    Retourne un dictionnaire avec les noms standards + les noms originaux.
+    """
+    normalized = {}
+
+    # Copie toutes les valeurs originales
+    for key, value in row.items():
+        if key:
+            normalized[key.strip()] = value.strip() if value else ''
+
+    # Ajoute les clés standards mappées vers les valeurs
+    standard_to_original = {
+        'shipper': 'Shipper',
+        'carrier': 'Carrier name or Supplement',
+        'method': 'PP Shipping method',
+        'weight': 'Weight range',
+        'service': 'Shipper Service',
+        'quantity': 'Quantité',
+        'price': 'Prix',
+        'start_date': 'Invoice Staring date',
+        'end_date': 'Invoice Ending date',
+        'tva': 'TVA en %',
+        'invoice_num': 'Invoice Num'
+    }
+
+    for standard, original_key in standard_to_original.items():
+        if standard in column_mapping:
+            csv_column = column_mapping[standard]
+            value = row.get(csv_column, '').strip() if row.get(csv_column) else ''
+            # Met la valeur sous le nom original attendu par le reste du code
+            normalized[original_key] = value
+
+    return normalized
+
+
 def parse_csv(csv_path):
-    """Parse le fichier CSV et groupe les données par expéditeur (Shipper)."""
+    """
+    Parse le fichier CSV et groupe les données par expéditeur.
+
+    Cette version est intelligente et adaptative:
+    - Détecte automatiquement le délimiteur (; ou ,)
+    - Trouve les colonnes par similarité (insensible à la casse, typos tolérées)
+    - Supporte plusieurs variations de noms de colonnes
+    """
     data_by_shipper = defaultdict(list)
 
     with open(csv_path, 'r', encoding='utf-8-sig') as f:
         # Détecte le délimiteur
-        sample = f.read(2048)
+        sample = f.read(4096)
         f.seek(0)
 
-        if ';' in sample:
-            delimiter = ';'
-        else:
-            delimiter = ','
+        # Compte les occurrences pour mieux détecter
+        semicolons = sample.count(';')
+        commas = sample.count(',')
+        delimiter = ';' if semicolons > commas else ','
 
         reader = csv.DictReader(f, delimiter=delimiter)
 
-        # Nettoie les noms de colonnes (enlève les espaces)
+        # Nettoie les noms de colonnes (enlève les espaces et BOM)
         if reader.fieldnames:
-            clean_fieldnames = [name.strip() for name in reader.fieldnames]
+            clean_fieldnames = [name.strip().lstrip('\ufeff') for name in reader.fieldnames]
             reader.fieldnames = clean_fieldnames
 
+        # Crée le mapping intelligent des colonnes
+        column_mapping = map_csv_columns(reader.fieldnames or [])
+
+        # Trouve la colonne shipper
+        shipper_column = column_mapping.get('shipper')
+
+        if not shipper_column:
+            print(f"⚠️  Colonnes détectées: {reader.fieldnames}")
+            print(f"⚠️  Aucune colonne 'Shipper' trouvée. Colonnes attendues: {COLUMN_MAPPINGS['shipper']}")
+            return data_by_shipper
+
+        print(f"✓ Colonne shipper détectée: '{shipper_column}'")
+        print(f"✓ Mapping des colonnes: {column_mapping}")
+
         for row in reader:
-            # Nettoie aussi les clés du row
-            clean_row = {k.strip(): v for k, v in row.items()}
-            shipper = clean_row.get('Shipper', '').strip()
+            # Normalise la ligne avec le mapping
+            normalized_row = normalize_row(row, column_mapping)
+
+            shipper = normalized_row.get('Shipper', '').strip()
             if shipper:
-                data_by_shipper[shipper].append(clean_row)
+                data_by_shipper[shipper].append(normalized_row)
 
     return data_by_shipper
 

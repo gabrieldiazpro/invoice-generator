@@ -2095,7 +2095,7 @@ body.impersonating .header {
 .clients-header-column {
     flex-direction: column;
     align-items: stretch !important;
-    gap: var(--spacing-md);
+    gap: var(--spacing-sm);
 }
 
 .clients-header-row {
@@ -2108,6 +2108,7 @@ body.impersonating .header {
     display: flex;
     gap: var(--spacing-sm);
     flex-wrap: wrap;
+    justify-content: flex-start;
 }
 
 .clients-filters {
@@ -2116,13 +2117,24 @@ body.impersonating .header {
     align-items: center;
 }
 
+.clients-filters .search-box {
+    flex: 1;
+}
+
 .clients-filters .search-box input {
-    min-width: 250px;
+    width: 100%;
+    min-width: 200px;
+}
+
+.clients-filters .clients-filter {
+    min-width: 150px;
+    max-width: 180px;
 }
 
 .stat-card.mini {
-    padding: var(--spacing-sm) var(--spacing-md);
-    min-width: 80px;
+    padding: var(--spacing-xs) var(--spacing-md);
+    min-width: 90px;
+    text-align: center;
 }
 
 .stat-card.mini.clickable {

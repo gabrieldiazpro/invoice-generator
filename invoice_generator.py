@@ -422,8 +422,8 @@ class InvoicePDFGenerator:
         elements.extend(self._build_invoice_table(rows))
 
         # Détails de paiement et totaux
-        total_ht, total_tva, total_ttc = self._calculate_totals(rows)
-        elements.extend(self._build_payment_details(total_ht, total_tva, total_ttc, invoice_number))
+        total_ht, total_tva, total_ttc, tva_by_rate = self._calculate_totals(rows)
+        elements.extend(self._build_payment_details(total_ht, total_tva, total_ttc, invoice_number, tva_by_rate))
 
         # Mentions légales
         elements.extend(self._build_legal_mentions())
@@ -604,26 +604,32 @@ class InvoicePDFGenerator:
         return elements
 
     def _calculate_totals(self, rows):
-        """Calcule les totaux HT, TVA et TTC."""
+        """Calcule les totaux HT, TVA par taux et TTC."""
         total_ht = Decimal('0.00')
-        total_tva = Decimal('0.00')
+        tva_by_rate = {}  # {taux: montant_tva}
 
         for row in rows:
             qty = int(float(row.get('Quantité', '1').replace(',', '.') or '1'))
             price = format_price(row.get('Prix', '0'))
-            tva_rate = Decimal(row.get('TVA en %', '20').replace(',', '.').strip() or '20')
+            tva_rate_str = row.get('TVA en %', '20').replace(',', '.').strip() or '20'
+            tva_rate = Decimal(tva_rate_str)
 
             line_ht = price * qty
             line_tva = (line_ht * tva_rate / 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
             total_ht += line_ht
-            total_tva += line_tva
 
+            # Grouper TVA par taux
+            if tva_rate not in tva_by_rate:
+                tva_by_rate[tva_rate] = Decimal('0.00')
+            tva_by_rate[tva_rate] += line_tva
+
+        total_tva = sum(tva_by_rate.values(), Decimal('0.00'))
         total_ttc = total_ht + total_tva
 
-        return total_ht, total_tva, total_ttc
+        return total_ht, total_tva, total_ttc, tva_by_rate
 
-    def _build_payment_details(self, total_ht, total_tva, total_ttc, invoice_number):
+    def _build_payment_details(self, total_ht, total_tva, total_ttc, invoice_number, tva_by_rate=None):
         """Construit les détails de paiement et les totaux."""
         elements = []
 
@@ -636,13 +642,25 @@ class InvoicePDFGenerator:
             ["IBAN", EMETTEUR['iban']],
         ]
 
+        # Construire les lignes de TVA par taux
         totals_info = [
             ["Total HT", format_currency(total_ht)],
-            ["TVA 20%", format_currency(total_tva)],
+        ]
+
+        # Ajouter chaque taux de TVA séparément (triés par taux décroissant)
+        if tva_by_rate:
+            for rate in sorted(tva_by_rate.keys(), reverse=True):
+                amount = tva_by_rate[rate]
+                if amount > 0:  # N'afficher que si montant > 0
+                    # Formater le taux (enlever les décimales inutiles: 20.00 -> 20, 5.50 -> 5.5)
+                    rate_str = str(rate).rstrip('0').rstrip('.') if '.' in str(rate) else str(rate)
+                    totals_info.append([f"TVA {rate_str}%", format_currency(amount)])
+
+        totals_info.extend([
             ["Montant Total de la TVA", format_currency(total_tva)],
             ["", ""],
             ["<b>Total TTC</b>", f"<b>{format_currency(total_ttc)}</b>"],
-        ]
+        ])
 
         # Infos bancaires
         bank_content = []

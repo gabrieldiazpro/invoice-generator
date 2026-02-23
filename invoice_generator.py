@@ -442,13 +442,17 @@ class InvoicePDFGenerator:
         # Titre "Facture" à gauche
         title = Paragraph("<u>Facture</u>", self.styles['InvoiceTitle'])
 
-        # Logo à droite (préserver le ratio d'aspect)
+        # Logo à droite (préserver le ratio d'aspect automatiquement)
         if os.path.exists(LOGO_PATH):
-            # Logo original: 876x572 pixels, ratio ~1.53
-            # Hauteur fixe de 28mm, largeur calculée pour préserver le ratio
-            logo_height = 28*mm
-            logo_width = logo_height * 1.53  # ~42.8mm
-            logo = Image(LOGO_PATH, width=logo_width, height=logo_height)
+            # Laisser reportlab calculer les dimensions en préservant le ratio
+            # On spécifie seulement la hauteur désirée
+            from PIL import Image as PILImage
+            with PILImage.open(LOGO_PATH) as img:
+                orig_width, orig_height = img.size
+                # Hauteur cible de 30mm, largeur calculée automatiquement
+                target_height = 30*mm
+                target_width = target_height * (orig_width / orig_height)
+            logo = Image(LOGO_PATH, width=target_width, height=target_height)
         else:
             logo = Paragraph("PEOPLES POST", self.styles['CompanyName'])
 

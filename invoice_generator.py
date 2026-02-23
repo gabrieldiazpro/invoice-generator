@@ -442,9 +442,13 @@ class InvoicePDFGenerator:
         # Titre "Facture" à gauche
         title = Paragraph("<u>Facture</u>", self.styles['InvoiceTitle'])
 
-        # Logo à droite
+        # Logo à droite (préserver le ratio d'aspect)
         if os.path.exists(LOGO_PATH):
-            logo = Image(LOGO_PATH, width=50*mm, height=25*mm)
+            # Logo original: 876x572 pixels, ratio ~1.53
+            # Hauteur fixe de 28mm, largeur calculée pour préserver le ratio
+            logo_height = 28*mm
+            logo_width = logo_height * 1.53  # ~42.8mm
+            logo = Image(LOGO_PATH, width=logo_width, height=logo_height)
         else:
             logo = Paragraph("PEOPLES POST", self.styles['CompanyName'])
 

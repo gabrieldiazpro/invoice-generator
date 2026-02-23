@@ -168,11 +168,13 @@ function showPreview(data) {
         const statusText = isConfigured ? '✓ Configuré' : '⚠ À configurer';
         const safeShipperName = encodeURIComponent(shipper.name);
         // Utiliser csv_name pour le matching backend, name pour l'affichage
+        // Encoder en base64 pour éviter les problèmes de caractères spéciaux
         const csvName = shipper.csv_name || shipper.name;
+        const encodedCsvName = btoa(unescape(encodeURIComponent(csvName)));
 
         return `
             <div class="shipper-item">
-                <input type="checkbox" class="shipper-checkbox" data-shipper="${csvName}" checked>
+                <input type="checkbox" class="shipper-checkbox" data-shipper="${encodedCsvName}" data-shipper-raw="${csvName}" checked>
                 <div class="shipper-info">
                     <div class="shipper-name">${shipper.name}</div>
                     <div class="shipper-details">${shipper.lines_count} lignes${shipper.client_email && shipper.client_email !== 'email@example.com' ? ' • ' + shipper.client_email : ''}</div>
@@ -205,10 +207,16 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
     const prefix = document.getElementById('invoice-prefix').value || 'PP';
     const startNumber = parseInt(document.getElementById('invoice-start').value) || 1;
 
-    // Get selected shippers
+    // Get selected shippers (décoder depuis base64)
     const selectedShippers = [];
     document.querySelectorAll('.shipper-checkbox:checked').forEach(cb => {
-        selectedShippers.push(cb.dataset.shipper);
+        try {
+            const decoded = decodeURIComponent(escape(atob(cb.dataset.shipper)));
+            selectedShippers.push(decoded);
+        } catch (e) {
+            // Fallback si pas encodé en base64
+            selectedShippers.push(cb.dataset.shipper);
+        }
     });
 
     if (selectedShippers.length === 0) {

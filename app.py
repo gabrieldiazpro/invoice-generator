@@ -325,6 +325,7 @@ def normalize_client_name(name):
     - Minuscules
     - Supprime accents
     - Supprime ponctuation et espaces multiples
+    - Supprime "via PP", "via Peoples Post", etc.
     - Supprime les formes juridiques courantes
     """
     import unicodedata
@@ -342,18 +343,17 @@ def normalize_client_name(name):
     # Supprime la ponctuation sauf espaces
     normalized = re.sub(r'[^\w\s]', ' ', normalized)
 
-    # Supprime les suffixes "via PP", "via Peoples Post", etc.
+    # Supprime "via PP", "via Peoples Post", "Peoples Post" partout
     via_patterns = [
-        r'\s*via\s+peoples?\s*post\s*$',
-        r'\s*via\s+pp\s*$',
-        r'\s*via\s+pp\s*$',
-        r'\s*-\s*pp\s*$',
-        r'\s*pp\s*$'
+        r'\s*via\s+peoples?\s*post',
+        r'\s*via\s+pp',
+        r'\s*peoples?\s*post',
+        r'\s*-\s*pp',
     ]
     for pattern in via_patterns:
-        normalized = re.sub(pattern, '', normalized, flags=re.IGNORECASE)
+        normalized = re.sub(pattern, ' ', normalized, flags=re.IGNORECASE)
 
-    # Supprime les formes juridiques courantes (à la fin ou au début)
+    # Supprime les formes juridiques courantes
     legal_forms = [
         r'\bsarl\b', r'\bsas\b', r'\bsa\b', r'\beurl\b', r'\bsasu\b',
         r'\bsei\b', r'\bsnc\b', r'\bsci\b', r'\bauto entrepreneur\b',
@@ -396,8 +396,8 @@ def calculate_similarity(s1, s2):
         shorter = min(len(n1_nospace), len(n2_nospace))
         longer = max(len(n1_nospace), len(n2_nospace))
         ratio = shorter / longer if longer > 0 else 0
-        if ratio > 0.8:
-            return 0.95
+        if ratio > 0.7:  # Plus permissif
+            return 0.90 + (ratio * 0.1)  # Score entre 0.90 et 1.0
 
     # Score basé sur les mots communs
     words1 = set(n1.split())
@@ -428,7 +428,7 @@ def calculate_similarity(s1, s2):
     return (jaccard * 0.3) + (char_score * 0.4) + (prefix_score * 0.3)
 
 
-def find_best_client_match(shipper_name, clients_config, threshold=0.55):
+def find_best_client_match(shipper_name, clients_config, threshold=0.45):
     """
     Trouve le meilleur client correspondant dans la config.
 
@@ -459,14 +459,28 @@ def find_best_client_match(shipper_name, clients_config, threshold=0.55):
         if client_nom.lower().strip() == shipper_lower:
             return client_name, client_info, 1.0
 
-    # 4. Match normalisé exact
+    # 4. Match normalisé exact (avec et sans espaces)
     shipper_normalized = normalize_client_name(shipper_name)
+    shipper_nospace = shipper_normalized.replace(' ', '')
+
     for client_name, client_info in clients_config.items():
-        if normalize_client_name(client_name) == shipper_normalized:
+        client_normalized = normalize_client_name(client_name)
+        client_nospace = client_normalized.replace(' ', '')
+
+        # Match normalisé exact
+        if client_normalized == shipper_normalized:
             return client_name, client_info, 0.95
+
+        # Match sans espaces (essentielsisabelle = essentiels isabelle)
+        if client_nospace == shipper_nospace:
+            return client_name, client_info, 0.95
+
         # Aussi vérifier le champ 'nom'
         client_nom = client_info.get('nom', '')
-        if normalize_client_name(client_nom) == shipper_normalized:
+        nom_normalized = normalize_client_name(client_nom)
+        nom_nospace = nom_normalized.replace(' ', '')
+
+        if nom_normalized == shipper_normalized or nom_nospace == shipper_nospace:
             return client_name, client_info, 0.95
 
     # 5. Match par similarité (sur clé ET sur nom)
@@ -558,7 +572,7 @@ def get_client_info(shipper_name, clients_config):
         # Match par similarité (sur clé et nom)
         score_key = calculate_similarity(shipper_name, db_name)
         score_nom = calculate_similarity(shipper_name, client_nom) if client_nom else 0
-        if max(score_key, score_nom) >= 0.55:
+        if max(score_key, score_nom) >= 0.45:
             db_client.pop('_id', None)
             clients_config[db_name] = db_client
             print(f"✓ Client DB fuzzy match: '{shipper_name}' → '{db_name}' (score: {max(score_key, score_nom):.2f})")

@@ -2043,8 +2043,12 @@ def upload_csv():
             email = client_info.get('email', 'email@example.com')
             is_configured = (siret != '00000000000000' and siret != '') and (email != 'email@example.com' and email != '' and '@' in email)
 
+            # Utiliser le nom du client en base (pas le nom CSV avec "via PP")
+            display_name = client_info.get('nom', shipper_name)
+
             shippers_summary.append({
-                'name': shipper_name,
+                'name': display_name,
+                'csv_name': shipper_name,
                 'lines_count': len(rows),
                 'total_ht': round(total_ht, 2),
                 'client_configured': is_configured,
@@ -2102,8 +2106,12 @@ def refresh_preview(file_id):
             email = client_info.get('email', 'email@example.com')
             is_configured = (siret != '00000000000000' and siret != '') and (email != 'email@example.com' and email != '' and '@' in email)
 
+            # Utiliser le nom de la base de données (sans "via PP") au lieu du nom CSV
+            display_name = client_info.get('nom', shipper_name)
+
             shippers_summary.append({
-                'name': shipper_name,
+                'name': display_name,
+                'csv_name': shipper_name,
                 'lines_count': len(rows),
                 'total_ht': round(total_ht, 2),
                 'client_configured': is_configured,

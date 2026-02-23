@@ -519,8 +519,15 @@ def get_client_info(shipper_name, clients_config):
     shipper_lower = shipper_name.lower().strip()
     shipper_normalized = normalize_client_name(shipper_name)
 
+    # Préparer les versions sans espaces pour comparaison
+    shipper_nospace = shipper_normalized.replace(' ', '')
+
     for db_name, db_client in all_db_clients.items():
         client_nom = db_client.get('nom', '')
+        db_normalized = normalize_client_name(db_name)
+        nom_normalized = normalize_client_name(client_nom)
+        db_nospace = db_normalized.replace(' ', '')
+        nom_nospace = nom_normalized.replace(' ', '')
 
         # Match exact sur la clé
         if db_name == shipper_name:
@@ -534,11 +541,18 @@ def get_client_info(shipper_name, clients_config):
             clients_config[db_name] = db_client
             return db_client
 
-        # Match normalisé
-        if normalize_client_name(db_name) == shipper_normalized or normalize_client_name(client_nom) == shipper_normalized:
+        # Match normalisé (avec et sans espaces)
+        if db_normalized == shipper_normalized or nom_normalized == shipper_normalized:
             db_client.pop('_id', None)
             clients_config[db_name] = db_client
             print(f"✓ Client DB normalized match: '{shipper_name}' → '{db_name}'")
+            return db_client
+
+        # Match normalisé sans espaces (essentielsisabelle = essentiels isabelle)
+        if db_nospace == shipper_nospace or nom_nospace == shipper_nospace:
+            db_client.pop('_id', None)
+            clients_config[db_name] = db_client
+            print(f"✓ Client DB nospace match: '{shipper_name}' → '{db_name}'")
             return db_client
 
         # Match par similarité (sur clé et nom)

@@ -342,6 +342,17 @@ def normalize_client_name(name):
     # Supprime la ponctuation sauf espaces
     normalized = re.sub(r'[^\w\s]', ' ', normalized)
 
+    # Supprime les suffixes "via PP", "via Peoples Post", etc.
+    via_patterns = [
+        r'\s*via\s+peoples?\s*post\s*$',
+        r'\s*via\s+pp\s*$',
+        r'\s*via\s+pp\s*$',
+        r'\s*-\s*pp\s*$',
+        r'\s*pp\s*$'
+    ]
+    for pattern in via_patterns:
+        normalized = re.sub(pattern, '', normalized, flags=re.IGNORECASE)
+
     # Supprime les formes juridiques courantes (à la fin ou au début)
     legal_forms = [
         r'\bsarl\b', r'\bsas\b', r'\bsa\b', r'\beurl\b', r'\bsasu\b',
@@ -373,11 +384,20 @@ def calculate_similarity(s1, s2):
     if n1 == n2:
         return 1.0
 
-    # Si l'un contient l'autre
-    if n1 in n2 or n2 in n1:
-        shorter = min(len(n1), len(n2))
-        longer = max(len(n1), len(n2))
-        return shorter / longer if longer > 0 else 0
+    # Comparer aussi sans espaces (pour "essentielsisabelle" vs "essentiels isabelle")
+    n1_nospace = n1.replace(' ', '')
+    n2_nospace = n2.replace(' ', '')
+
+    if n1_nospace == n2_nospace:
+        return 0.98  # Match quasi-parfait
+
+    # Si l'un contient l'autre (avec ou sans espaces)
+    if n1 in n2 or n2 in n1 or n1_nospace in n2_nospace or n2_nospace in n1_nospace:
+        shorter = min(len(n1_nospace), len(n2_nospace))
+        longer = max(len(n1_nospace), len(n2_nospace))
+        ratio = shorter / longer if longer > 0 else 0
+        if ratio > 0.8:
+            return 0.95
 
     # Score basé sur les mots communs
     words1 = set(n1.split())
@@ -392,20 +412,20 @@ def calculate_similarity(s1, s2):
     jaccard = len(common_words) / len(all_words) if all_words else 0
 
     # Score basé sur les caractères communs (pour les typos)
-    common_chars = sum(1 for c in n1 if c in n2)
-    char_score = (2.0 * common_chars) / (len(n1) + len(n2)) if (len(n1) + len(n2)) > 0 else 0
+    common_chars = sum(1 for c in n1_nospace if c in n2_nospace)
+    char_score = (2.0 * common_chars) / (len(n1_nospace) + len(n2_nospace)) if (len(n1_nospace) + len(n2_nospace)) > 0 else 0
 
     # Score de préfixe commun (important pour les noms)
     prefix_len = 0
-    for c1, c2 in zip(n1, n2):
+    for c1, c2 in zip(n1_nospace, n2_nospace):
         if c1 == c2:
             prefix_len += 1
         else:
             break
-    prefix_score = prefix_len / max(len(n1), len(n2)) if max(len(n1), len(n2)) > 0 else 0
+    prefix_score = prefix_len / max(len(n1_nospace), len(n2_nospace)) if max(len(n1_nospace), len(n2_nospace)) > 0 else 0
 
     # Combinaison pondérée
-    return (jaccard * 0.4) + (char_score * 0.3) + (prefix_score * 0.3)
+    return (jaccard * 0.3) + (char_score * 0.4) + (prefix_score * 0.3)
 
 
 def find_best_client_match(shipper_name, clients_config, threshold=0.55):

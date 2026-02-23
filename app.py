@@ -1421,11 +1421,11 @@ def format_email_body(template, invoice_data):
 
 
 def send_invoice_email(invoice_data, email_config, batch_folder, sender_name=None, sender_email=None):
-    """Envoie un email HTML stylisé avec la facture en pièce jointe
+    """Envoie un email HTML stylisé avec la facture en pièce jointe via l'API Brevo
 
     Args:
         invoice_data: Les données de la facture
-        email_config: La configuration SMTP et templates
+        email_config: La configuration email et templates
         batch_folder: Le dossier du batch contenant les PDFs
         sender_name: Nom de l'expéditeur (optionnel, priorité sur email_config)
         sender_email: Email de l'expéditeur (optionnel, priorité sur email_config)
@@ -1435,96 +1435,85 @@ def send_invoice_email(invoice_data, email_config, batch_folder, sender_name=Non
     if not recipient_email:
         return {'success': False, 'error': 'Pas d\'adresse email pour ce client'}
 
-    if not email_config.get('smtp_username') or not email_config.get('smtp_password'):
-        return {'success': False, 'error': 'Configuration SMTP incomplète'}
+    api_key = email_config.get('smtp_password', '')
+    if not api_key:
+        return {'success': False, 'error': 'Clé API Brevo non configurée'}
 
     # Utiliser l'identité de l'utilisateur si fournie, sinon celle de la config globale
     actual_sender_name = sender_name or email_config.get('sender_name', 'Peoples Post')
     actual_sender_email = sender_email or email_config.get('sender_email', '')
 
     try:
-        # Créer le message multipart/related pour le HTML avec images inline
-        msg = MIMEMultipart('related')
-        msg['From'] = f"{actual_sender_name} <{actual_sender_email}>"
-        msg['To'] = recipient_email
-        msg['Subject'] = email_config.get('email_subject', 'Votre facture Peoples Post').format(
+        # Sujet de l'email
+        subject = email_config.get('email_subject', 'Votre facture Peoples Post').format(
             invoice_number=invoice_data.get('invoice_number', ''),
             client_name=invoice_data.get('client_name', ''),
             company_name=invoice_data.get('company_name', '')
         )
 
-        # Créer la partie alternative (HTML + texte)
-        msg_alternative = MIMEMultipart('alternative')
-        msg.attach(msg_alternative)
-
-        # Corps de l'email en texte brut (fallback)
+        # Corps de l'email en texte brut
         body_text = format_email_body(
             email_config.get('email_template', ''),
             invoice_data
         )
-        msg_alternative.attach(MIMEText(body_text, 'plain', 'utf-8'))
 
         # Corps de l'email en HTML
         body_html = create_html_email(body_text, invoice_data, 'invoice')
-        msg_alternative.attach(MIMEText(body_html, 'html', 'utf-8'))
 
-        # Ajouter le logo comme image intégrée
-        if os.path.exists(LOGO_EMAIL_PATH):
-            with open(LOGO_EMAIL_PATH, 'rb') as f:
-                logo = MIMEImage(f.read())
-                logo.add_header('Content-ID', '<logo>')
-                logo.add_header('Content-Disposition', 'inline', filename='logo.png')
-                msg.attach(logo)
+        # Préparer le payload pour l'API Brevo
+        payload = {
+            "sender": {"name": actual_sender_name, "email": actual_sender_email},
+            "to": [{"email": recipient_email, "name": invoice_data.get('company_name', recipient_email)}],
+            "subject": subject,
+            "htmlContent": body_html,
+            "textContent": body_text
+        }
 
         # Pièce jointe PDF
         pdf_path = os.path.join(batch_folder, invoice_data.get('filename', ''))
         if os.path.exists(pdf_path):
             with open(pdf_path, 'rb') as f:
-                pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
-                pdf_attachment.add_header(
-                    'Content-Disposition',
-                    'attachment',
-                    filename=invoice_data.get('filename', 'facture.pdf')
-                )
-                msg.attach(pdf_attachment)
+                pdf_content = f.read()
+                payload["attachment"] = [{
+                    "name": invoice_data.get('filename', 'facture.pdf'),
+                    "content": base64.b64encode(pdf_content).decode('utf-8')
+                }]
 
-        # Connexion SMTP et envoi avec timeout
-        smtp_server = email_config.get('smtp_server', 'smtp.gmail.com')
-        smtp_port = int(email_config.get('smtp_port', 465))
-        smtp_username = email_config.get('smtp_username', '')
-        smtp_password = email_config.get('smtp_password', '')
+        # Appel à l'API Brevo
+        req = urllib.request.Request(
+            'https://api.brevo.com/v3/smtp/email',
+            data=json.dumps(payload).encode('utf-8'),
+            headers={
+                'accept': 'application/json',
+                'api-key': api_key,
+                'content-type': 'application/json'
+            },
+            method='POST'
+        )
 
-        # Utiliser SSL pour port 465, STARTTLS pour 587
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
-        else:
-            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
-            server.starttls()
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            logger.info(f"Email facture envoyé via API: {invoice_data.get('invoice_number')} -> {recipient_email}")
+            return {'success': True, 'message_id': result.get('messageId')}
 
-        server.login(smtp_username, smtp_password)
-        server.send_message(msg)
-        server.quit()
-
-        logger.info(f"Email facture envoyé: {invoice_data.get('invoice_number')} -> {recipient_email}")
-        return {'success': True}
-
-    except smtplib.SMTPAuthenticationError:
-        logger.error(f"Échec auth SMTP pour facture {invoice_data.get('invoice_number')}")
-        return {'success': False, 'error': 'Échec d\'authentification SMTP. Vérifiez vos identifiants.'}
-    except smtplib.SMTPException as e:
-        logger.error(f"Erreur SMTP envoi facture {invoice_data.get('invoice_number')}: {e}")
-        return {'success': False, 'error': f'Erreur SMTP: {str(e)}'}
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        logger.error(f"Erreur API Brevo facture {invoice_data.get('invoice_number')}: {e.code} - {error_body}")
+        return {'success': False, 'error': f'Erreur API Brevo: {error_body}'}
+    except urllib.error.URLError as e:
+        logger.error(f"Erreur connexion API Brevo: {e}")
+        return {'success': False, 'error': f'Erreur connexion: {str(e)}'}
     except Exception as e:
         logger.error(f"Erreur envoi facture {invoice_data.get('invoice_number')}: {e}")
         return {'success': False, 'error': f'Erreur: {str(e)}'}
 
 
 def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=1, sender_name=None, sender_email=None):
-    """Envoie un email HTML stylisé de relance avec la facture en pièce jointe
+    """Envoie un email HTML stylisé de relance avec la facture en pièce jointe via l'API Brevo
 
     Args:
         invoice_data: Les données de la facture
-        email_config: La configuration SMTP et templates
+        email_config: La configuration email et templates
         batch_folder: Le dossier du batch contenant les PDFs
         reminder_type: 1 = première relance (48h), 2 = avertissement (7j), 3 = dernier avis, 4 = coupure compte
         sender_name: Nom de l'expéditeur (optionnel, priorité sur email_config)
@@ -1535,33 +1524,25 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
     if not recipient_email:
         return {'success': False, 'error': 'Pas d\'adresse email pour ce client'}
 
-    if not email_config.get('smtp_username') or not email_config.get('smtp_password'):
-        return {'success': False, 'error': 'Configuration SMTP incomplète'}
+    api_key = email_config.get('smtp_password', '')
+    if not api_key:
+        return {'success': False, 'error': 'Clé API Brevo non configurée'}
 
     # Utiliser l'identité de l'utilisateur si fournie, sinon celle de la config globale
     actual_sender_name = sender_name or email_config.get('sender_name', 'Peoples Post')
     actual_sender_email = sender_email or email_config.get('sender_email', '')
 
     try:
-        # Créer le message multipart/related pour le HTML avec images inline
-        msg = MIMEMultipart('related')
-        msg['From'] = f"{actual_sender_name} <{actual_sender_email}>"
-        msg['To'] = recipient_email
-
         # Utiliser le template de relance approprié
         subject_key = f'reminder_{reminder_type}_subject'
         template_key = f'reminder_{reminder_type}_template'
 
         subject_template = email_config.get(subject_key, email_config.get('reminder_1_subject', 'RELANCE - Facture {invoice_number}'))
-        msg['Subject'] = subject_template.format(
+        subject = subject_template.format(
             invoice_number=invoice_data.get('invoice_number', ''),
             client_name=invoice_data.get('client_name', ''),
             company_name=invoice_data.get('company_name', '')
         )
-
-        # Créer la partie alternative (HTML + texte)
-        msg_alternative = MIMEMultipart('alternative')
-        msg.attach(msg_alternative)
 
         # Corps de l'email avec template de relance approprié
         body_template = email_config.get(template_key, '')
@@ -1569,59 +1550,54 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
             body_template = email_config.get('email_template', '')
 
         body_text = format_email_body(body_template, invoice_data)
-        msg_alternative.attach(MIMEText(body_text, 'plain', 'utf-8'))
 
         # Corps de l'email en HTML
         email_type = f'reminder_{reminder_type}'
         body_html = create_html_email(body_text, invoice_data, email_type)
-        msg_alternative.attach(MIMEText(body_html, 'html', 'utf-8'))
 
-        # Ajouter le logo comme image intégrée
-        if os.path.exists(LOGO_EMAIL_PATH):
-            with open(LOGO_EMAIL_PATH, 'rb') as f:
-                logo = MIMEImage(f.read())
-                logo.add_header('Content-ID', '<logo>')
-                logo.add_header('Content-Disposition', 'inline', filename='logo.png')
-                msg.attach(logo)
+        # Préparer le payload pour l'API Brevo
+        payload = {
+            "sender": {"name": actual_sender_name, "email": actual_sender_email},
+            "to": [{"email": recipient_email, "name": invoice_data.get('company_name', recipient_email)}],
+            "subject": subject,
+            "htmlContent": body_html,
+            "textContent": body_text
+        }
 
         # Pièce jointe PDF
         pdf_path = os.path.join(batch_folder, invoice_data.get('filename', ''))
         if os.path.exists(pdf_path):
             with open(pdf_path, 'rb') as f:
-                pdf_attachment = MIMEApplication(f.read(), _subtype='pdf')
-                pdf_attachment.add_header(
-                    'Content-Disposition',
-                    'attachment',
-                    filename=invoice_data.get('filename', 'facture.pdf')
-                )
-                msg.attach(pdf_attachment)
+                pdf_content = f.read()
+                payload["attachment"] = [{
+                    "name": invoice_data.get('filename', 'facture.pdf'),
+                    "content": base64.b64encode(pdf_content).decode('utf-8')
+                }]
 
-        # Connexion SMTP et envoi avec timeout
-        smtp_server = email_config.get('smtp_server', 'smtp.gmail.com')
-        smtp_port = int(email_config.get('smtp_port', 465))
-        smtp_username = email_config.get('smtp_username', '')
-        smtp_password = email_config.get('smtp_password', '')
+        # Appel à l'API Brevo
+        req = urllib.request.Request(
+            'https://api.brevo.com/v3/smtp/email',
+            data=json.dumps(payload).encode('utf-8'),
+            headers={
+                'accept': 'application/json',
+                'api-key': api_key,
+                'content-type': 'application/json'
+            },
+            method='POST'
+        )
 
-        # Utiliser SSL pour port 465, STARTTLS pour 587
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
-        else:
-            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
-            server.starttls()
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            logger.info(f"Relance R{reminder_type} envoyée via API: {invoice_data.get('invoice_number')} -> {recipient_email}")
+            return {'success': True, 'message_id': result.get('messageId')}
 
-        server.login(smtp_username, smtp_password)
-        server.send_message(msg)
-        server.quit()
-
-        logger.info(f"Relance R{reminder_type} envoyée: {invoice_data.get('invoice_number')} -> {recipient_email}")
-        return {'success': True}
-
-    except smtplib.SMTPAuthenticationError:
-        logger.error(f"Échec auth SMTP pour relance {invoice_data.get('invoice_number')}")
-        return {'success': False, 'error': 'Échec d\'authentification SMTP. Vérifiez vos identifiants.'}
-    except smtplib.SMTPException as e:
-        logger.error(f"Erreur SMTP relance {invoice_data.get('invoice_number')}: {e}")
-        return {'success': False, 'error': f'Erreur SMTP: {str(e)}'}
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        logger.error(f"Erreur API Brevo relance {invoice_data.get('invoice_number')}: {e.code} - {error_body}")
+        return {'success': False, 'error': f'Erreur API Brevo: {error_body}'}
+    except urllib.error.URLError as e:
+        logger.error(f"Erreur connexion API Brevo: {e}")
+        return {'success': False, 'error': f'Erreur connexion: {str(e)}'}
     except Exception as e:
         logger.error(f"Erreur relance {invoice_data.get('invoice_number')}: {e}")
         return {'success': False, 'error': f'Erreur: {str(e)}'}

@@ -167,10 +167,12 @@ function showPreview(data) {
         const statusClass = isConfigured ? 'configured' : 'missing clickable';
         const statusText = isConfigured ? '✓ Configuré' : '⚠ À configurer';
         const safeShipperName = encodeURIComponent(shipper.name);
+        // Utiliser csv_name pour le matching backend, name pour l'affichage
+        const csvName = shipper.csv_name || shipper.name;
 
         return `
             <div class="shipper-item">
-                <input type="checkbox" class="shipper-checkbox" data-shipper="${shipper.name}" checked>
+                <input type="checkbox" class="shipper-checkbox" data-shipper="${csvName}" checked>
                 <div class="shipper-info">
                     <div class="shipper-name">${shipper.name}</div>
                     <div class="shipper-details">${shipper.lines_count} lignes${shipper.client_email && shipper.client_email !== 'email@example.com' ? ' • ' + shipper.client_email : ''}</div>

@@ -277,20 +277,23 @@ def format_currency(amount):
 def generate_invoice_number(prefix="PP", year=None, sequence=None):
     """Génère un numéro de facture.
 
-    Format: {prefix}-{sequence}
-    Exemple: PP-2025-001, FAC-12-2025-001, etc.
-    Le préfixe peut contenir l'année si souhaité.
+    Format: {prefix}-{year}-{sequence}
+    Exemple: PP-2026-0001, PP-2026-0002, etc.
     """
+    # Année courante si non spécifiée
+    if year is None:
+        year = datetime.now().year
+
     if sequence is None:
-        sequence = datetime.now().strftime("%m%d%H%M")
+        sequence = 1
 
-    # Formater le numéro de séquence (avec zéros si entier)
+    # Formater le numéro de séquence sur 4 chiffres
     if isinstance(sequence, int):
-        seq_str = f"{sequence:03d}"
+        seq_str = f"{sequence:04d}"
     else:
-        seq_str = str(sequence)
+        seq_str = str(sequence).zfill(4)
 
-    return f"{prefix}-{seq_str}"
+    return f"{prefix}-{year}-{seq_str}"
 
 
 def build_description(row):

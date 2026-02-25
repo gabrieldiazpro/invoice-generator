@@ -397,7 +397,11 @@ class InvoicePDFGenerator:
         if emission_date is None:
             emission_date = datetime.now()
 
-        echeance_date = emission_date + timedelta(days=30)
+        # Date d'échéance: toujours le 15 du mois suivant
+        if emission_date.month == 12:
+            echeance_date = emission_date.replace(year=emission_date.year + 1, month=1, day=15)
+        else:
+            echeance_date = emission_date.replace(month=emission_date.month + 1, day=15)
 
         filename = f"facture_{invoice_number.replace('-', '_')}_{shipper_name.replace(' ', '_')}.pdf"
         filepath = os.path.join(self.output_dir, filename)

@@ -203,8 +203,32 @@ document.getElementById('btn-back').addEventListener('click', () => {
     resetUpload();
 });
 
+// ==========================================================================
+// Invoice Number Preview
+// ==========================================================================
+
+function updateInvoicePreview() {
+    const prefix = document.getElementById('invoice-prefix').value || 'PP-2026-';
+    const startNumber = parseInt(document.getElementById('invoice-start').value) || 1;
+    const preview = document.getElementById('invoice-preview');
+
+    // Formater les numéros sur 4 chiffres
+    const num1 = String(startNumber).padStart(4, '0');
+    const num2 = String(startNumber + 1).padStart(4, '0');
+    const num3 = String(startNumber + 2).padStart(4, '0');
+
+    preview.innerHTML = `Aperçu: <strong>${prefix}${num1}</strong>, ${prefix}${num2}, ${prefix}${num3}...`;
+}
+
+document.getElementById('invoice-prefix').addEventListener('input', updateInvoicePreview);
+document.getElementById('invoice-start').addEventListener('input', updateInvoicePreview);
+
+// ==========================================================================
+// Generation
+// ==========================================================================
+
 document.getElementById('btn-generate').addEventListener('click', async () => {
-    const prefix = document.getElementById('invoice-prefix').value || 'PP';
+    const prefix = document.getElementById('invoice-prefix').value || 'PP-2026-';
     const startNumber = parseInt(document.getElementById('invoice-start').value) || 1;
 
     // Get selected shippers (décoder depuis base64)

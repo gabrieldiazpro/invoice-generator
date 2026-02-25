@@ -104,14 +104,14 @@
                         <h2>Configuration</h2>
                     </div>
                     <div class="card-body">
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label for="invoice-prefix">Préfixe des factures</label>
-                                <input type="text" id="invoice-prefix" value="PP" placeholder="PP">
+                        <div class="form-group">
+                            <label>Format de numérotation</label>
+                            <div class="invoice-number-format">
+                                <input type="text" id="invoice-prefix" value="PP-{{ now.year }}-" placeholder="PP-2026-" class="invoice-prefix-input">
+                                <input type="number" id="invoice-start" value="1" min="1" max="9999" class="invoice-start-input" placeholder="0001">
                             </div>
-                            <div class="form-group">
-                                <label for="invoice-start">Numéro de départ</label>
-                                <input type="number" id="invoice-start" value="1" min="1">
+                            <div class="invoice-preview" id="invoice-preview">
+                                Aperçu: <strong>PP-{{ now.year }}-0001</strong>, PP-{{ now.year }}-0002, PP-{{ now.year }}-0003...
                             </div>
                         </div>
                         <div class="form-actions">

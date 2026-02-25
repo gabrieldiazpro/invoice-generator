@@ -1968,7 +1968,7 @@ def update_my_sender():
 @login_required
 def index():
     """Page d'accueil"""
-    return render_template('index.html', user=current_user)
+    return render_template('index.html', user=current_user, now=datetime.now())
 
 
 @app.route('/api/upload', methods=['POST'])

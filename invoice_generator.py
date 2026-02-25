@@ -397,11 +397,27 @@ class InvoicePDFGenerator:
         if emission_date is None:
             emission_date = datetime.now()
 
-        # Date d'échéance: dernier jour du mois de la facture
-        if emission_date.month == 12:
-            next_month = emission_date.replace(year=emission_date.year + 1, month=1, day=1)
+        # Extraire la date de fin de période depuis les données CSV
+        period_end_str = rows[0].get('Invoice Ending date', '') if rows else ''
+
+        # Parser la date de fin de période (format DD/MM/YYYY ou similaire)
+        period_date = None
+        if period_end_str:
+            for fmt in ['%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y', '%d.%m.%Y']:
+                try:
+                    period_date = datetime.strptime(period_end_str.strip(), fmt)
+                    break
+                except ValueError:
+                    continue
+
+        # Date d'échéance: dernier jour du mois de la période facturée
+        # Si pas de période, utiliser le mois d'émission
+        ref_date = period_date if period_date else emission_date
+
+        if ref_date.month == 12:
+            next_month = ref_date.replace(year=ref_date.year + 1, month=1, day=1)
         else:
-            next_month = emission_date.replace(month=emission_date.month + 1, day=1)
+            next_month = ref_date.replace(month=ref_date.month + 1, day=1)
         echeance_date = next_month - timedelta(days=1)
 
         filename = f"facture_{invoice_number.replace('-', '_')}_{shipper_name.replace(' ', '_')}.pdf"

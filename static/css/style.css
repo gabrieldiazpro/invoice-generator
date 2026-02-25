@@ -457,36 +457,22 @@ a:hover {
 }
 
 /* Invoice Number Format */
-.invoice-number-format {
-    display: flex;
-    align-items: center;
-    gap: 0;
-}
-
-.invoice-prefix-input {
-    flex: 0 0 140px;
-    border-radius: var(--radius-md) 0 0 var(--radius-md) !important;
-    border-right: none !important;
-    text-align: right;
-    font-family: monospace;
-    font-weight: 600;
-}
-
-.invoice-start-input {
-    flex: 0 0 100px;
-    border-radius: 0 var(--radius-md) var(--radius-md) 0 !important;
-    font-family: monospace;
-    font-weight: 600;
+.form-grid-3 {
+    grid-template-columns: 1fr 1fr 1fr;
 }
 
 .invoice-preview {
-    margin-top: var(--spacing-sm);
-    font-size: 0.85rem;
-    color: var(--color-gray-500);
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--color-gray-50);
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    color: var(--color-gray-600);
 }
 
 .invoice-preview strong {
     color: var(--color-primary);
+    font-family: monospace;
 }
 
 .form-actions {

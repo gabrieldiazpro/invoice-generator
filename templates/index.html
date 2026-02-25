@@ -104,15 +104,22 @@
                         <h2>Configuration</h2>
                     </div>
                     <div class="card-body">
-                        <div class="form-group">
-                            <label>Format de numérotation</label>
-                            <div class="invoice-number-format">
-                                <input type="text" id="invoice-prefix" value="PP-{{ now.year }}-" placeholder="PP-2026-" class="invoice-prefix-input">
-                                <input type="number" id="invoice-start" value="1" min="1" max="9999" class="invoice-start-input" placeholder="0001">
+                        <div class="form-grid form-grid-3">
+                            <div class="form-group">
+                                <label for="invoice-prefix">Préfixe</label>
+                                <input type="text" id="invoice-prefix" value="PP" placeholder="PP">
                             </div>
-                            <div class="invoice-preview" id="invoice-preview">
-                                Aperçu: <strong>PP-{{ now.year }}-0001</strong>, PP-{{ now.year }}-0002, PP-{{ now.year }}-0003...
+                            <div class="form-group">
+                                <label for="invoice-year">Année de facturation</label>
+                                <input type="number" id="invoice-year" value="{{ now.year }}" min="2020" max="2099" placeholder="2026">
                             </div>
+                            <div class="form-group">
+                                <label for="invoice-start">Numéro de départ</label>
+                                <input type="number" id="invoice-start" value="1" min="1" max="9999" placeholder="1">
+                            </div>
+                        </div>
+                        <div class="invoice-preview" id="invoice-preview">
+                            Aperçu: <strong>PP-{{ now.year }}-0001</strong>, PP-{{ now.year }}-0002, PP-{{ now.year }}-0003...
                         </div>
                         <div class="form-actions">
                             <button class="btn btn-secondary" id="btn-back">Retour</button>

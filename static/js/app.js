@@ -208,7 +208,8 @@ document.getElementById('btn-back').addEventListener('click', () => {
 // ==========================================================================
 
 function updateInvoicePreview() {
-    const prefix = document.getElementById('invoice-prefix').value || 'PP-2026-';
+    const prefix = document.getElementById('invoice-prefix').value || 'PP';
+    const year = document.getElementById('invoice-year').value || new Date().getFullYear();
     const startNumber = parseInt(document.getElementById('invoice-start').value) || 1;
     const preview = document.getElementById('invoice-preview');
 
@@ -217,10 +218,12 @@ function updateInvoicePreview() {
     const num2 = String(startNumber + 1).padStart(4, '0');
     const num3 = String(startNumber + 2).padStart(4, '0');
 
-    preview.innerHTML = `Aperçu: <strong>${prefix}${num1}</strong>, ${prefix}${num2}, ${prefix}${num3}...`;
+    const fullPrefix = `${prefix}-${year}-`;
+    preview.innerHTML = `Aperçu: <strong>${fullPrefix}${num1}</strong>, ${fullPrefix}${num2}, ${fullPrefix}${num3}...`;
 }
 
 document.getElementById('invoice-prefix').addEventListener('input', updateInvoicePreview);
+document.getElementById('invoice-year').addEventListener('input', updateInvoicePreview);
 document.getElementById('invoice-start').addEventListener('input', updateInvoicePreview);
 
 // ==========================================================================
@@ -228,7 +231,9 @@ document.getElementById('invoice-start').addEventListener('input', updateInvoice
 // ==========================================================================
 
 document.getElementById('btn-generate').addEventListener('click', async () => {
-    const prefix = document.getElementById('invoice-prefix').value || 'PP-2026-';
+    const prefixBase = document.getElementById('invoice-prefix').value || 'PP';
+    const year = document.getElementById('invoice-year').value || new Date().getFullYear();
+    const prefix = `${prefixBase}-${year}-`;
     const startNumber = parseInt(document.getElementById('invoice-start').value) || 1;
 
     // Get selected shippers (décoder depuis base64)

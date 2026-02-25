@@ -2007,12 +2007,16 @@ function renderHistory(history) {
                 ? '<button class="reminder-cell-btn r4" disabled title="Non disponible">R4</button>'
                 : `<button class="reminder-cell-btn r4" data-action="send-reminder" data-id="${safeId}" data-type="4" title="Coupure compte">R4</button>`;
 
+        // Formater la date d'échéance
+        const dueDate = inv.due_date ? new Date(inv.due_date).toLocaleDateString('fr-FR') : '-';
+
         return `
             <tr data-history-id="${safeId}">
                 <td><input type="checkbox" class="history-checkbox" data-id="${safeId}" ${isPaid ? 'disabled' : ''}></td>
                 <td class="invoice-number-cell">${escapeHtml(inv.invoice_number)}</td>
                 <td class="client-cell" title="${escapeHtml(inv.client_name)}">${escapeHtml(inv.client_name)}</td>
                 <td class="amount-cell">${inv.total_ttc_formatted || formatCurrency(inv.total_ttc)}</td>
+                <td class="due-date-cell">${dueDate}</td>
                 <td>${paymentBadge}</td>
                 <td>${r1Btn}</td>
                 <td>${r2Btn}</td>

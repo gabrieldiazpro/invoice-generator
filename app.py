@@ -2170,6 +2170,14 @@ def generate_invoices():
             if client_email == 'email@example.com':
                 client_email = ''
 
+            # Calculer la date d'échéance (dernier jour du mois d'émission)
+            emission_date = datetime.now()
+            if emission_date.month == 12:
+                next_month = emission_date.replace(year=emission_date.year + 1, month=1, day=1)
+            else:
+                next_month = emission_date.replace(month=emission_date.month + 1, day=1)
+            due_date = next_month - timedelta(days=1)
+
             invoice_data = {
                 'shipper': shipper_name,
                 'invoice_number': invoice_number,
@@ -2182,7 +2190,9 @@ def generate_invoices():
                 'company_name': client_info.get('nom', shipper_name),
                 'client_email': client_email,
                 'period': period,
-                'email_sent': False
+                'email_sent': False,
+                'emission_date': emission_date.isoformat(),
+                'due_date': due_date.isoformat()
             }
 
             generated.append(invoice_data)

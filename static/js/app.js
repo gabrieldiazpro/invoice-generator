@@ -2116,6 +2116,13 @@ function renderHistory(history) {
                             <line x1="3" y1="18" x2="3.01" y2="18"></line>
                         </svg>
                     </button>` : ''}
+                    <button class="history-action-btn upload" data-action="upload-pdf" data-id="${safeId}" title="Recharger le PDF">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                    </button>
                     <button class="history-action-btn download" data-action="download" data-id="${safeId}" title="Télécharger">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -2146,6 +2153,36 @@ function renderHistory(history) {
         btn.addEventListener('click', () => {
             const id = decodeURIComponent(btn.dataset.id);
             previewDetailFromHistory(id);
+        });
+    });
+
+    tbody.querySelectorAll('[data-action="upload-pdf"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = decodeURIComponent(btn.dataset.id);
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.pdf,application/pdf';
+            input.onchange = async () => {
+                const file = input.files[0];
+                if (!file) return;
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                    const res = await fetch(`/api/history/${encodeURIComponent(id)}/upload-pdf`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast('PDF rechargé avec succès', 'success');
+                    } else {
+                        showToast(data.error || 'Erreur lors du rechargement', 'error');
+                    }
+                } catch (e) {
+                    showToast('Erreur lors du rechargement du PDF', 'error');
+                }
+            };
+            input.click();
         });
     });
 

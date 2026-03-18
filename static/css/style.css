@@ -1341,6 +1341,11 @@ a:hover {
     color: #10a37f;
 }
 
+.history-action-btn.upload:hover {
+    background-color: rgba(234, 179, 8, 0.1);
+    color: #ca8a04;
+}
+
 .detail-table-wrapper {
     overflow-x: auto;
 }

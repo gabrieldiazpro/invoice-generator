@@ -2909,6 +2909,30 @@ def delete_from_history(invoice_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/history/<invoice_id>/upload-pdf', methods=['POST'])
+@login_required
+def upload_pdf_for_history(invoice_id):
+    """Recharge le PDF d'une facture de l'historique (fichier manquant)"""
+    invoice = invoice_history_collection.find_one({'id': invoice_id})
+    if not invoice:
+        return jsonify({'error': 'Facture non trouvée'}), 404
+
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'error': 'Aucun fichier fourni'}), 400
+    if not file.filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'Le fichier doit être un PDF'}), 400
+
+    batch_id = invoice.get('batch_id')
+    filename = invoice.get('filename')
+    batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
+    os.makedirs(batch_folder, exist_ok=True)
+    filepath = os.path.join(batch_folder, filename)
+    file.save(filepath)
+
+    return jsonify({'success': True})
+
+
 @app.route('/api/history/download/<invoice_id>')
 @login_required
 def download_from_history(invoice_id):

@@ -19,4 +19,6 @@ COPY . .
 
 ENV FLASK_ENV=production
 
-CMD ["/bin/sh", "-c", "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120"]
+COPY start.sh .
+RUN chmod +x start.sh
+CMD ["./start.sh"]

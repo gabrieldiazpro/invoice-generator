@@ -1,4 +1,4 @@
-FROM python:3.9-slim-bullseye
+FROM python:3.11-slim-bullseye
 
 # Dépendances système requises par WeasyPrint
 RUN apt-get update && apt-get install -y --no-install-recommends \

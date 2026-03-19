@@ -294,6 +294,60 @@ users_collection = db['users'] if db is not None else None
 email_config_collection = db['email_config'] if db is not None else None
 invoice_history_collection = db['invoice_history'] if db is not None else None
 clients_collection = db['clients'] if db is not None else None
+counters_collection = db['counters'] if db is not None else None
+
+
+def reserve_invoice_numbers(prefix, count):
+    """Réserve un bloc de numéros de facture de façon atomique.
+
+    Utilise findAndModify avec $inc pour garantir qu'aucun doublon
+    n'est possible, même avec des requêtes concurrentes.
+
+    Args:
+        prefix: Le préfixe des factures (ex: 'PP-2026-')
+        count: Le nombre de numéros à réserver
+
+    Returns:
+        Le premier numéro du bloc réservé (les numéros vont de start à start+count-1)
+    """
+    result = counters_collection.find_one_and_update(
+        {'_id': f'invoice_seq_{prefix}'},
+        {'$inc': {'seq': count}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER
+    )
+    # seq est maintenant la valeur APRÈS l'incrément
+    # Le bloc réservé va de (seq - count + 1) à seq
+    return result['seq'] - count + 1
+
+
+def init_invoice_counter(prefix):
+    """Initialise le compteur pour un préfixe donné en se basant sur l'historique existant.
+
+    À appeler une seule fois lors de la migration, ou automatiquement
+    si le compteur n'existe pas encore.
+    """
+    existing = counters_collection.find_one({'_id': f'invoice_seq_{prefix}'})
+    if existing:
+        return existing['seq']
+
+    # Scanner l'historique pour trouver le max existant
+    max_seq = 0
+    for inv in invoice_history_collection.find({}, {'invoice_number': 1}):
+        num = inv.get('invoice_number', '')
+        if num.startswith(prefix):
+            parts = num.rsplit('-', 1)
+            if len(parts) == 2:
+                try:
+                    seq = int(parts[1])
+                    if seq > max_seq:
+                        max_seq = seq
+                except ValueError:
+                    pass
+
+    counters_collection.insert_one({'_id': f'invoice_seq_{prefix}', 'seq': max_seq})
+    logger.info(f"Compteur initialisé pour {prefix}: seq={max_seq}")
+    return max_seq
 
 
 def require_db(f):
@@ -2250,7 +2304,6 @@ def generate_invoices():
     """Génère les factures PDF avec streaming SSE pour la progression"""
     data = request.json
     file_id = data.get('file_id')
-    start_number = data.get('start_number', 1)
     prefix = data.get('prefix', 'PP')
     selected_shippers = data.get('shippers', [])
     details_file_id = data.get('details_file_id')
@@ -2283,13 +2336,16 @@ def generate_invoices():
     ]
     total_to_generate = len(shippers_to_process)
 
+    # Réserver un bloc de numéros de facture de façon atomique
+    init_invoice_counter(prefix)
+    first_number = reserve_invoice_numbers(prefix, total_to_generate)
+
     def generate_stream():
         batch_id = uuid.uuid4().hex[:8]
         batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
         os.makedirs(batch_folder, exist_ok=True)
 
         generator = InvoicePDFGenerator(output_dir=batch_folder)
-        invoice_num = int(start_number)
         generated = []
 
         for idx, (shipper_name, rows) in enumerate(shippers_to_process):
@@ -2297,7 +2353,7 @@ def generate_invoices():
                 csv_siret = rows[0].get('SIRET', '') if rows else ''
                 clean_siret = ''.join(c for c in str(csv_siret) if c.isdigit()) if csv_siret else ''
                 client_info = get_client_info(shipper_name, clients_config, csv_siret=csv_siret)
-                invoice_number = generate_invoice_number(prefix, sequence=invoice_num)
+                invoice_number = generate_invoice_number(prefix, sequence=first_number + idx)
 
                 start_date = rows[0].get('Invoice Staring date', '') if rows else ''
                 end_date = rows[0].get('Invoice Ending date', '') if rows else ''
@@ -2352,7 +2408,6 @@ def generate_invoices():
 
                 generated.append(invoice_data)
                 add_to_invoice_history(invoice_data, batch_id)
-                invoice_num += 1
 
                 # Envoyer l'événement de progression
                 progress_data = json.dumps({
@@ -2644,6 +2699,13 @@ def send_all_emails(batch_id):
     with open(batch_data_path, 'r', encoding='utf-8') as f:
         batch_data = json.load(f)
 
+    # Charger le statut email depuis MongoDB (source de vérité)
+    invoices = batch_data.get('invoices', [])
+    invoice_ids = [f"{batch_id}_{inv.get('invoice_number')}" for inv in invoices]
+    sent_in_db = set()
+    for doc in invoice_history_collection.find({'id': {'$in': invoice_ids}, 'email_sent': True}, {'id': 1}):
+        sent_in_db.add(doc['id'])
+
     # Charger la config email
     email_config = load_email_config()
 
@@ -2658,11 +2720,12 @@ def send_all_emails(batch_id):
         'details': []
     }
 
-    for i, invoice_data in enumerate(batch_data.get('invoices', [])):
+    for i, invoice_data in enumerate(invoices):
         results['total'] += 1
 
-        # Vérifier si déjà envoyé
-        if only_pending and invoice_data.get('email_sent'):
+        # Vérifier si déjà envoyé (depuis MongoDB)
+        inv_id = f"{batch_id}_{invoice_data.get('invoice_number')}"
+        if only_pending and inv_id in sent_in_db:
             results['skipped'] += 1
             results['details'].append({
                 'invoice_number': invoice_data.get('invoice_number'),
@@ -2719,7 +2782,7 @@ def send_all_emails(batch_id):
 @app.route('/api/email/status/<batch_id>', methods=['GET'])
 @login_required
 def get_email_status(batch_id):
-    """Récupère le statut d'envoi des emails pour un batch"""
+    """Récupère le statut d'envoi des emails pour un batch depuis MongoDB (source de vérité)"""
     batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
     batch_data_path = os.path.join(batch_folder, BATCH_DATA_FILE)
 
@@ -2729,9 +2792,23 @@ def get_email_status(batch_id):
     with open(batch_data_path, 'r', encoding='utf-8') as f:
         batch_data = json.load(f)
 
+    # Enrichir avec le statut email depuis MongoDB (source de vérité)
+    invoices = batch_data.get('invoices', [])
+    invoice_ids = [f"{batch_id}_{inv.get('invoice_number')}" for inv in invoices]
+    history_map = {}
+    for doc in invoice_history_collection.find({'id': {'$in': invoice_ids}}, {'id': 1, 'email_sent': 1, 'email_sent_at': 1}):
+        history_map[doc['id']] = doc
+
+    for inv in invoices:
+        inv_id = f"{batch_id}_{inv.get('invoice_number')}"
+        hist = history_map.get(inv_id)
+        if hist:
+            inv['email_sent'] = hist.get('email_sent', False)
+            inv['email_sent_at'] = hist.get('email_sent_at')
+
     return jsonify({
         'success': True,
-        'invoices': batch_data.get('invoices', [])
+        'invoices': invoices
     })
 
 
@@ -2922,19 +2999,13 @@ def create_html_email_preview(body_text, invoice_data, email_type='invoice'):
 @app.route('/api/history/next-invoice-number')
 @login_required
 def get_next_invoice_number():
-    """Retourne le prochain numéro de séquence disponible basé sur le max en base"""
-    invoices = invoice_history_collection.find({}, {'invoice_number': 1})
-    max_seq = 0
-    for inv in invoices:
-        parts = inv.get('invoice_number', '').rsplit('-', 1)
-        if len(parts) == 2:
-            try:
-                seq = int(parts[1])
-                if seq > max_seq:
-                    max_seq = seq
-            except ValueError:
-                pass
-    return jsonify({'next_number': max_seq + 1})
+    """Retourne le prochain numéro de séquence disponible basé sur le compteur atomique"""
+    prefix_base = request.args.get('prefix', 'PP')
+    year = request.args.get('year', str(datetime.now().year))
+    prefix = f"{prefix_base}-{year}-"
+
+    seq = init_invoice_counter(prefix)
+    return jsonify({'next_number': seq + 1})
 
 
 @app.route('/api/history', methods=['GET'])

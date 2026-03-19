@@ -252,15 +252,7 @@ function showPreview(data) {
     }).join('');
 
     // Pré-remplir le numéro de départ avec le prochain disponible en base
-    fetch('/api/history/next-invoice-number')
-        .then(r => r.json())
-        .then(d => {
-            if (d.next_number) {
-                document.getElementById('invoice-start').value = String(d.next_number).padStart(4, '0');
-                updateInvoicePreview();
-            }
-        })
-        .catch(() => {});
+    fetchNextInvoiceNumber();
 
     // Show steps
     stepUpload.classList.add('hidden');
@@ -298,8 +290,22 @@ function updateInvoicePreview() {
     preview.innerHTML = `Aperçu: <strong>${fullPrefix}${num1}</strong>, ${fullPrefix}${num2}, ${fullPrefix}${num3}...`;
 }
 
-document.getElementById('invoice-prefix').addEventListener('input', updateInvoicePreview);
-document.getElementById('invoice-year').addEventListener('input', updateInvoicePreview);
+function fetchNextInvoiceNumber() {
+    const prefix = document.getElementById('invoice-prefix').value || 'PP';
+    const year = document.getElementById('invoice-year').value || new Date().getFullYear();
+    fetch(`/api/history/next-invoice-number?prefix=${encodeURIComponent(prefix)}&year=${encodeURIComponent(year)}`)
+        .then(r => r.json())
+        .then(d => {
+            if (d.next_number) {
+                document.getElementById('invoice-start').value = String(d.next_number).padStart(4, '0');
+                updateInvoicePreview();
+            }
+        })
+        .catch(() => {});
+}
+
+document.getElementById('invoice-prefix').addEventListener('input', () => { updateInvoicePreview(); fetchNextInvoiceNumber(); });
+document.getElementById('invoice-year').addEventListener('input', () => { updateInvoicePreview(); fetchNextInvoiceNumber(); });
 document.getElementById('invoice-start').addEventListener('input', updateInvoicePreview);
 
 // ==========================================================================

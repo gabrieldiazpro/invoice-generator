@@ -333,6 +333,38 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Génération en cours...';
 
+    // Afficher la barre de progression
+    let progressContainer = document.getElementById('generate-progress');
+    if (!progressContainer) {
+        progressContainer = document.createElement('div');
+        progressContainer.id = 'generate-progress';
+        progressContainer.innerHTML = `
+            <div class="generate-progress-bar">
+                <div class="generate-progress-fill" id="generate-progress-fill"></div>
+            </div>
+            <div class="generate-progress-text" id="generate-progress-text">Préparation...</div>
+        `;
+        btn.parentNode.insertBefore(progressContainer, btn);
+    }
+    progressContainer.classList.remove('hidden');
+    document.getElementById('generate-progress-fill').style.width = '0%';
+    document.getElementById('generate-progress-text').textContent = 'Préparation...';
+
+    const resetBtn = () => {
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            Générer les factures
+        `;
+        progressContainer.classList.add('hidden');
+    };
+
     try {
         const response = await fetch('/api/generate', {
             method: 'POST',
@@ -346,31 +378,57 @@ document.getElementById('btn-generate').addEventListener('click', async () => {
             })
         });
 
-        const data = await response.json();
-
         if (!response.ok) {
-            throw new Error(data.error || 'Erreur lors de la génération');
+            const errData = await response.json();
+            throw new Error(errData.error || 'Erreur lors de la génération');
         }
 
-        currentBatchId = data.batch_id;
-        invoicesData = data.invoices;
-        showResults(data);
-        showToast(`${data.total_generated} factures générées`, 'success');
+        // Lire le stream SSE
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop(); // garder le fragment incomplet
+
+            for (const line of lines) {
+                const dataLine = line.replace(/^data: /, '').trim();
+                if (!dataLine) continue;
+
+                try {
+                    const event = JSON.parse(dataLine);
+
+                    if (event.type === 'progress') {
+                        const pct = Math.round((event.current / event.total) * 100);
+                        document.getElementById('generate-progress-fill').style.width = pct + '%';
+                        if (event.error) {
+                            document.getElementById('generate-progress-text').textContent =
+                                `${event.current}/${event.total} — ${event.error}`;
+                        } else {
+                            document.getElementById('generate-progress-text').textContent =
+                                `${event.current}/${event.total} — ${event.client_name}`;
+                        }
+                    } else if (event.type === 'done') {
+                        currentBatchId = event.batch_id;
+                        invoicesData = event.invoices;
+                        showResults(event);
+                        showToast(`${event.total_generated} factures générées`, 'success');
+                    }
+                } catch (e) {
+                    // Ignorer les lignes non-JSON
+                }
+            }
+        }
 
     } catch (error) {
         showToast(error.message, 'error');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-            Générer les factures
-        `;
+        resetBtn();
     }
 });
 

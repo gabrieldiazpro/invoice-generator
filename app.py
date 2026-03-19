@@ -29,7 +29,7 @@ from email.mime.application import MIMEApplication
 from email.mime.image import MIMEImage
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, g, session
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, g, session, Response, stream_with_context
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.exceptions import HTTPException
@@ -2237,7 +2237,7 @@ def refresh_preview(file_id):
 @app.route('/api/generate', methods=['POST'])
 @login_required
 def generate_invoices():
-    """Génère les factures PDF"""
+    """Génère les factures PDF avec streaming SSE pour la progression"""
     data = request.json
     file_id = data.get('file_id')
     start_number = data.get('start_number', 1)
@@ -2252,108 +2252,119 @@ def generate_invoices():
     if not os.path.exists(filepath):
         return jsonify({'error': 'Fichier non trouvé'}), 404
 
+    # Pré-charger les données avant le streaming (accès à request impossible dans le générateur)
     try:
-        # Parser le CSV
         data_by_shipper = parse_csv(filepath)
         clients_config = load_clients_config()
 
-        # Charger le CSV de détail si présent
         details_by_siret = {}
         if details_file_id:
             details_filepath = os.path.join(app.config['UPLOAD_FOLDER'], details_file_id)
             if os.path.exists(details_filepath):
                 details_by_siret = parse_details_csv(details_filepath)
                 logger.info(f"CSV de détail chargé: {len(details_by_siret)} SIRETs trouvés")
+    except Exception as e:
+        return jsonify({'error': f'Erreur lors du traitement: {str(e)}'}), 500
 
-        # Créer un dossier unique pour cette génération
+    # Filtrer les shippers sélectionnés pour compter le total
+    shippers_to_process = [
+        (name, rows) for name, rows in data_by_shipper.items()
+        if not selected_shippers or name in selected_shippers
+    ]
+    total_to_generate = len(shippers_to_process)
+
+    def generate_stream():
         batch_id = uuid.uuid4().hex[:8]
         batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
         os.makedirs(batch_folder, exist_ok=True)
 
-        # Générer les factures
         generator = InvoicePDFGenerator(output_dir=batch_folder)
         invoice_num = int(start_number)
-
         generated = []
 
-        for shipper_name, rows in data_by_shipper.items():
-            # Si une sélection est spécifiée, filtrer
-            if selected_shippers and shipper_name not in selected_shippers:
-                continue
+        for idx, (shipper_name, rows) in enumerate(shippers_to_process):
+            try:
+                csv_siret = rows[0].get('SIRET', '') if rows else ''
+                clean_siret = ''.join(c for c in str(csv_siret) if c.isdigit()) if csv_siret else ''
+                client_info = get_client_info(shipper_name, clients_config, csv_siret=csv_siret)
+                invoice_number = generate_invoice_number(prefix, sequence=invoice_num)
 
-            # Récupérer le SIRET du CSV (s'il existe) - PRIORITÉ pour le matching
-            csv_siret = rows[0].get('SIRET', '') if rows else ''
-            clean_siret = ''.join(c for c in str(csv_siret) if c.isdigit()) if csv_siret else ''
-            client_info = get_client_info(shipper_name, clients_config, csv_siret=csv_siret)
-            invoice_number = generate_invoice_number(prefix, sequence=invoice_num)
+                start_date = rows[0].get('Invoice Staring date', '') if rows else ''
+                end_date = rows[0].get('Invoice Ending date', '') if rows else ''
+                period = f"du {start_date} au {end_date}" if start_date and end_date else ''
 
-            # Extraire la période depuis les données
-            start_date = rows[0].get('Invoice Staring date', '') if rows else ''
-            end_date = rows[0].get('Invoice Ending date', '') if rows else ''
-            period = f"du {start_date} au {end_date}" if start_date and end_date else ''
+                filepath_pdf, total_ttc = generator.generate_invoice(
+                    shipper_name, rows, client_info, invoice_number
+                )
 
-            filepath_pdf, total_ttc = generator.generate_invoice(
-                shipper_name,
-                rows,
-                client_info,
-                invoice_number
-            )
+                total_ht = sum(
+                    float(row.get('Prix', '0').replace(',', '.') or '0') *
+                    int(float(row.get('Quantité', '1').replace(',', '.') or '1'))
+                    for row in rows
+                )
 
-            # Calculer le total HT
-            total_ht = sum(
-                float(row.get('Prix', '0').replace(',', '.') or '0') *
-                int(float(row.get('Quantité', '1').replace(',', '.') or '1'))
-                for row in rows
-            )
+                client_email = client_info.get('email', '')
+                if client_email == 'email@example.com':
+                    client_email = ''
 
-            # Récupérer l'email (filtrer les placeholders)
-            client_email = client_info.get('email', '')
-            if client_email == 'email@example.com':
-                client_email = ''
+                emission_date = datetime.now()
+                if emission_date.month == 12:
+                    next_month = emission_date.replace(year=emission_date.year + 1, month=1, day=1)
+                else:
+                    next_month = emission_date.replace(month=emission_date.month + 1, day=1)
+                due_date = next_month - timedelta(days=1)
 
-            # Calculer la date d'échéance (dernier jour du mois d'émission)
-            emission_date = datetime.now()
-            if emission_date.month == 12:
-                next_month = emission_date.replace(year=emission_date.year + 1, month=1, day=1)
-            else:
-                next_month = emission_date.replace(month=emission_date.month + 1, day=1)
-            due_date = next_month - timedelta(days=1)
+                detail_filename = None
+                if clean_siret and clean_siret in details_by_siret:
+                    detail_filename = f"detail_{invoice_number}.csv"
+                    detail_csv_path = os.path.join(batch_folder, detail_filename)
+                    save_detail_csv(details_by_siret[clean_siret], detail_csv_path)
 
-            # Sauvegarder le CSV de détail pour cette facture si disponible
-            detail_filename = None
-            if clean_siret and clean_siret in details_by_siret:
-                detail_filename = f"detail_{invoice_number}.csv"
-                detail_csv_path = os.path.join(batch_folder, detail_filename)
-                save_detail_csv(details_by_siret[clean_siret], detail_csv_path)
+                invoice_data = {
+                    'shipper': shipper_name,
+                    'invoice_number': invoice_number,
+                    'filename': os.path.basename(filepath_pdf),
+                    'total_ttc': float(total_ttc),
+                    'total_ht': float(total_ht),
+                    'total_ttc_formatted': format_currency(total_ttc),
+                    'total_ht_formatted': format_currency(total_ht),
+                    'client_name': shipper_name,
+                    'company_name': client_info.get('nom', shipper_name),
+                    'client_email': client_email,
+                    'period': period,
+                    'email_sent': False,
+                    'emission_date': emission_date.isoformat(),
+                    'due_date': due_date.isoformat(),
+                    'client_siret': clean_siret,
+                    'detail_filename': detail_filename,
+                    'has_detail': bool(detail_filename)
+                }
 
-            invoice_data = {
-                'shipper': shipper_name,
-                'invoice_number': invoice_number,
-                'filename': os.path.basename(filepath_pdf),
-                'total_ttc': float(total_ttc),
-                'total_ht': float(total_ht),
-                'total_ttc_formatted': format_currency(total_ttc),
-                'total_ht_formatted': format_currency(total_ht),
-                'client_name': shipper_name,
-                'company_name': client_info.get('nom', shipper_name),
-                'client_email': client_email,
-                'period': period,
-                'email_sent': False,
-                'emission_date': emission_date.isoformat(),
-                'due_date': due_date.isoformat(),
-                'client_siret': clean_siret,
-                'detail_filename': detail_filename,
-                'has_detail': bool(detail_filename)
-            }
+                generated.append(invoice_data)
+                add_to_invoice_history(invoice_data, batch_id)
+                invoice_num += 1
 
-            generated.append(invoice_data)
+                # Envoyer l'événement de progression
+                progress_data = json.dumps({
+                    'type': 'progress',
+                    'current': idx + 1,
+                    'total': total_to_generate,
+                    'invoice_number': invoice_number,
+                    'client_name': client_info.get('nom', shipper_name)
+                }, ensure_ascii=False)
+                yield f"data: {progress_data}\n\n"
 
-            # Ajouter à l'historique
-            add_to_invoice_history(invoice_data, batch_id)
+            except Exception as e:
+                logger.error(f"Erreur génération facture {shipper_name}: {e}")
+                error_data = json.dumps({
+                    'type': 'progress',
+                    'current': idx + 1,
+                    'total': total_to_generate,
+                    'error': f"Erreur pour {shipper_name}: {str(e)}"
+                }, ensure_ascii=False)
+                yield f"data: {error_data}\n\n"
 
-            invoice_num += 1
-
-        # Sauvegarder les données du batch pour l'envoi d'emails
+        # Sauvegarder les données du batch
         batch_data_path = os.path.join(batch_folder, BATCH_DATA_FILE)
         with open(batch_data_path, 'w', encoding='utf-8') as f:
             json.dump({'invoices': generated, 'created_at': datetime.now().isoformat()}, f, indent=2, ensure_ascii=False)
@@ -2366,15 +2377,23 @@ def generate_invoices():
                     os.remove(tmp)
                     logger.debug(f"Fichier upload supprimé: {fid}")
 
-        return jsonify({
-            'success': True,
+        # Envoyer l'événement final avec toutes les données
+        done_data = json.dumps({
+            'type': 'done',
             'batch_id': batch_id,
             'invoices': generated,
             'total_generated': len(generated)
-        })
+        }, ensure_ascii=False)
+        yield f"data: {done_data}\n\n"
 
-    except Exception as e:
-        return jsonify({'error': f'Erreur lors de la génération: {str(e)}'}), 500
+    return Response(
+        stream_with_context(generate_stream()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
 
 
 @app.route('/api/download/<batch_id>/<filename>')

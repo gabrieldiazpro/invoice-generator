@@ -1585,7 +1585,7 @@ def format_email_body(template, invoice_data):
     )
 
 
-def send_invoice_email(invoice_data, email_config, batch_folder, sender_name=None, sender_email=None, include_detail=False):
+def send_invoice_email(invoice_data, email_config, batch_folder, include_detail=False):
     """Envoie un email HTML stylisé avec la facture en pièce jointe via l'API Brevo
 
     Args:
@@ -1611,9 +1611,9 @@ def send_invoice_email(invoice_data, email_config, batch_folder, sender_name=Non
     if not api_key:
         return {'success': False, 'error': 'Clé API Brevo non configurée'}
 
-    # Utiliser l'identité de l'utilisateur si fournie, sinon celle de la config globale
-    actual_sender_name = sender_name or email_config.get('sender_name', 'Peoples Post')
-    actual_sender_email = sender_email or email_config.get('sender_email', '')
+    # Expéditeur depuis la config globale uniquement
+    actual_sender_name = email_config.get('sender_name', 'Peoples Post')
+    actual_sender_email = os.environ.get('SENDER_INVOICE_EMAIL') or email_config.get('sender_email', '')
 
     try:
         # Sujet de l'email
@@ -1695,7 +1695,7 @@ def send_invoice_email(invoice_data, email_config, batch_folder, sender_name=Non
         return {'success': False, 'error': f'Erreur: {str(e)}'}
 
 
-def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=1, sender_name=None, sender_email=None):
+def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=1):
     """Envoie un email HTML stylisé de relance avec la facture en pièce jointe via l'API Brevo
 
     Args:
@@ -1722,9 +1722,9 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
     if not api_key:
         return {'success': False, 'error': 'Clé API Brevo non configurée'}
 
-    # Utiliser l'identité de l'utilisateur si fournie, sinon celle de la config globale
-    actual_sender_name = sender_name or email_config.get('sender_name', 'Peoples Post')
-    actual_sender_email = sender_email or email_config.get('sender_email', '')
+    # Expéditeur depuis la config globale uniquement
+    actual_sender_name = email_config.get('sender_name', 'Peoples Post')
+    actual_sender_email = os.environ.get('SENDER_INVOICE_EMAIL') or email_config.get('sender_email', '')
 
     try:
         # Utiliser le template de relance approprié
@@ -2658,14 +2658,11 @@ def send_single_email(batch_id, invoice_number):
     # Charger la config email
     email_config = load_email_config()
 
-    # Récupérer l'identité d'expéditeur de l'utilisateur
-    sender_name, sender_email = get_user_sender_info()
-
     # Lire l'option "joindre le détail"
     include_detail = (request.json or {}).get('include_detail', False)
 
-    # Envoyer l'email
-    result = send_invoice_email(invoice_data, email_config, batch_folder, sender_name, sender_email, include_detail=include_detail)
+    # Envoyer l'email (expéditeur = config globale uniquement)
+    result = send_invoice_email(invoice_data, email_config, batch_folder, include_detail=include_detail)
 
     if result['success']:
         # Marquer comme envoyé
@@ -2716,9 +2713,6 @@ def send_all_emails(batch_id):
     # Charger la config email
     email_config = load_email_config()
 
-    # Récupérer l'identité d'expéditeur de l'utilisateur
-    sender_name, sender_email = get_user_sender_info()
-
     results = {
         'total': 0,
         'sent': 0,
@@ -2753,7 +2747,7 @@ def send_all_emails(batch_id):
 
         # Envoyer l'email
         include_detail = invoice_data.get('invoice_number') in detail_invoices
-        result = send_invoice_email(invoice_data, email_config, batch_folder, sender_name, sender_email, include_detail=include_detail)
+        result = send_invoice_email(invoice_data, email_config, batch_folder, include_detail=include_detail)
 
         if result['success']:
             results['sent'] += 1
@@ -3254,9 +3248,6 @@ def send_single_reminder(invoice_id, reminder_type):
     # Charger config email
     email_config = load_email_config()
 
-    # Récupérer l'identité d'expéditeur de l'utilisateur
-    sender_name, sender_email = get_user_sender_info()
-
     # Préparer les données
     invoice_data = {
         **invoice,
@@ -3266,8 +3257,8 @@ def send_single_reminder(invoice_id, reminder_type):
     # Trouver le dossier batch
     batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{invoice.get('batch_id')}")
 
-    # Envoyer l'email de relance
-    result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type, sender_name, sender_email)
+    # Envoyer l'email de relance (expéditeur = config globale uniquement)
+    result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type)
 
     if result['success']:
         # Mettre à jour l'historique
@@ -3295,8 +3286,6 @@ def send_all_reminders(reminder_type):
     email_config = load_email_config()
 
     # Récupérer l'identité d'expéditeur de l'utilisateur
-    sender_name, sender_email = get_user_sender_info()
-
     reminder_sent_key = f'reminder_{reminder_type}_sent'
     reminder_at_key = f'reminder_{reminder_type}_at'
     reminder_names = {1: '1ère relance', 2: '2ème relance (avertissement)', 3: '3ème relance (dernier avis)'}
@@ -3357,7 +3346,7 @@ def send_all_reminders(reminder_type):
         batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{invoice.get('batch_id')}")
 
         # Envoyer la relance
-        result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type, sender_name, sender_email)
+        result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type)
 
         if result['success']:
             results['sent'] += 1
@@ -3542,11 +3531,6 @@ def bulk_send_reminder():
     # Récupérer la config email
     email_config = load_email_config()
 
-    # Récupérer les infos de l'utilisateur
-    user_data = users_collection.find_one({'_id': ObjectId(current_user.id)})
-    sender_name = user_data.get('sender_name', '') if user_data else ''
-    sender_email = user_data.get('sender_email', '') if user_data else ''
-
     reminder_sent_key = f'reminder_{reminder_type}_sent'
     reminder_at_key = f'reminder_{reminder_type}_at'
     reminder_names = {1: 'Relance 1', 2: 'Relance 2', 3: 'Relance 3', 4: 'Relance 4'}
@@ -3587,7 +3571,7 @@ def bulk_send_reminder():
         batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{invoice.get('batch_id')}")
 
         # Envoyer la relance
-        result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type, sender_name, sender_email)
+        result = send_reminder_email(invoice_data, email_config, batch_folder, reminder_type)
 
         if result['success']:
             results['sent'] += 1

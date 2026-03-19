@@ -2933,6 +2933,58 @@ def upload_pdf_for_history(invoice_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/history/<invoice_id>/regenerate-pdf', methods=['POST'])
+@login_required
+def regenerate_pdf_from_csv(invoice_id):
+    """Régénère le PDF d'une facture depuis un CSV re-uploadé"""
+    invoice = invoice_history_collection.find_one({'id': invoice_id})
+    if not invoice:
+        return jsonify({'error': 'Facture non trouvée'}), 404
+
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'error': 'Aucun fichier fourni'}), 400
+
+    tmp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"regen_{uuid.uuid4().hex}.csv")
+    file.save(tmp_path)
+
+    try:
+        data_by_shipper = parse_csv(tmp_path)
+        shipper_name = invoice.get('shipper', '')
+
+        rows = data_by_shipper.get(shipper_name)
+        if not rows:
+            if len(data_by_shipper) == 1:
+                rows = list(data_by_shipper.values())[0]
+            else:
+                available = ', '.join(data_by_shipper.keys())
+                return jsonify({'error': f'Expéditeur "{shipper_name}" non trouvé dans le CSV. Disponibles : {available}'}), 400
+
+        clients_config = load_clients_config()
+        csv_siret = rows[0].get('SIRET', '') if rows else ''
+        client_info = get_client_info(shipper_name, clients_config, csv_siret=csv_siret)
+
+        batch_id = invoice.get('batch_id')
+        invoice_number = invoice.get('invoice_number')
+        emission_date_str = invoice.get('emission_date', '')
+        try:
+            emission_date = datetime.fromisoformat(emission_date_str)
+        except Exception:
+            emission_date = datetime.now()
+
+        batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
+        os.makedirs(batch_folder, exist_ok=True)
+
+        generator = InvoicePDFGenerator(output_dir=batch_folder)
+        generator.generate_invoice(shipper_name, rows, client_info, invoice_number, emission_date=emission_date)
+
+        return jsonify({'success': True})
+
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
 @app.route('/api/history/download/<invoice_id>')
 @login_required
 def download_from_history(invoice_id):

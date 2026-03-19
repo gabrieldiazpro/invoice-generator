@@ -2159,30 +2159,7 @@ function renderHistory(history) {
     tbody.querySelectorAll('[data-action="upload-pdf"]').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = decodeURIComponent(btn.dataset.id);
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.pdf,application/pdf';
-            input.onchange = async () => {
-                const file = input.files[0];
-                if (!file) return;
-                const formData = new FormData();
-                formData.append('file', file);
-                try {
-                    const res = await fetch(`/api/history/${encodeURIComponent(id)}/upload-pdf`, {
-                        method: 'POST',
-                        body: formData
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        showToast('PDF rechargé avec succès', 'success');
-                    } else {
-                        showToast(data.error || 'Erreur lors du rechargement', 'error');
-                    }
-                } catch (e) {
-                    showToast('Erreur lors du rechargement du PDF', 'error');
-                }
-            };
-            input.click();
+            openReuploadModal(id);
         });
     });
 
@@ -2266,6 +2243,66 @@ function updateHistoryStats(history) {
 function downloadFromHistory(id) {
     window.location.href = `/api/history/download/${encodeURIComponent(id)}`;
 }
+
+// ==========================================================================
+// Modal: recharger PDF historique
+// ==========================================================================
+
+let reuploadInvoiceId = null;
+
+function openReuploadModal(id) {
+    reuploadInvoiceId = id;
+    const inv = historyData.find(h => h.id === id);
+    document.getElementById('history-reupload-title').textContent =
+        inv ? `Recharger — ${inv.invoice_number}` : 'Recharger la facture';
+    document.getElementById('history-reupload-modal').classList.remove('hidden');
+}
+
+function closeReuploadModal() {
+    document.getElementById('history-reupload-modal').classList.add('hidden');
+    reuploadInvoiceId = null;
+}
+
+async function reuploadFile(file, endpoint) {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const res = await fetch(`/api/history/${encodeURIComponent(reuploadInvoiceId)}/${endpoint}`, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Facture rechargée avec succès', 'success');
+            closeReuploadModal();
+        } else {
+            showToast(data.error || 'Erreur lors du rechargement', 'error');
+        }
+    } catch (e) {
+        showToast('Erreur lors du rechargement', 'error');
+    }
+}
+
+document.getElementById('history-reupload-close').addEventListener('click', closeReuploadModal);
+document.getElementById('history-reupload-backdrop').addEventListener('click', closeReuploadModal);
+
+document.getElementById('btn-select-reupload-pdf').addEventListener('click', () => {
+    document.getElementById('reupload-pdf-input').click();
+});
+document.getElementById('reupload-pdf-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) reuploadFile(file, 'upload-pdf');
+    e.target.value = '';
+});
+
+document.getElementById('btn-select-reupload-csv').addEventListener('click', () => {
+    document.getElementById('reupload-csv-input').click();
+});
+document.getElementById('reupload-csv-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) reuploadFile(file, 'regenerate-pdf');
+    e.target.value = '';
+});
 
 function previewInvoiceFromHistory(id) {
     const inv = historyData.find(h => h.id === id);

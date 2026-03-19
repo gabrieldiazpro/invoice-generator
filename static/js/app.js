@@ -243,13 +243,20 @@ function showPreview(data) {
                     <div class="shipper-name">${escapeHtml(shipper.name)}</div>
                     <div class="shipper-details">${shipper.lines_count} lignes${shipper.client_email && shipper.client_email !== 'email@example.com' ? ' • ' + escapeHtml(shipper.client_email) : ''}</div>
                 </div>
-                <div class="shipper-status ${statusClass}" ${!isConfigured ? `data-shipper-key="${safeShipperName}" onclick="openClientConfigFromPreview('${safeShipperName}')"` : ''}>
+                <div class="shipper-status ${statusClass}" ${!isConfigured ? `data-action="configure-client" data-shipper-key="${safeShipperName}"` : ''}>
                     ${statusText}
                 </div>
                 <div class="shipper-total">${formatCurrency(shipper.total_ht)} HT</div>
             </div>
         `;
     }).join('');
+
+    // Attacher les événements de configuration client
+    shippersList.querySelectorAll('[data-action="configure-client"]').forEach(el => {
+        el.addEventListener('click', () => {
+            openClientConfigFromPreview(el.dataset.shipperKey);
+        });
+    });
 
     // Pré-remplir le numéro de départ avec le prochain disponible en base
     fetchNextInvoiceNumber();
@@ -519,11 +526,30 @@ function renderInvoicesList(invoices) {
 function updateEmailSummary(invoices) {
     const sent = invoices.filter(i => i.email_sent).length;
     const pending = invoices.filter(i => !i.email_sent && i.client_email).length;
-    const noEmail = invoices.filter(i => !i.client_email).length;
+    const noEmailList = invoices.filter(i => !i.client_email);
 
     document.getElementById('emails-sent').textContent = sent;
     document.getElementById('emails-pending').textContent = pending;
-    document.getElementById('emails-failed').textContent = noEmail;
+    document.getElementById('emails-failed').textContent = noEmailList.length;
+
+    const failedBadge = document.getElementById('emails-failed-badge');
+    const failedDetails = document.getElementById('email-failed-details');
+
+    if (noEmailList.length > 0) {
+        failedBadge.style.cursor = 'pointer';
+        failedBadge.onclick = () => {
+            failedDetails.classList.toggle('hidden');
+        };
+        failedDetails.innerHTML = `
+            <div class="email-failed-list">
+                ${noEmailList.map(inv => `<span class="email-failed-item">${escapeHtml(inv.company_name || inv.shipper)} <small>(${escapeHtml(inv.invoice_number)})</small></span>`).join('')}
+            </div>
+        `;
+    } else {
+        failedBadge.style.cursor = 'default';
+        failedBadge.onclick = null;
+        failedDetails.classList.add('hidden');
+    }
 
     document.getElementById('email-summary').classList.remove('hidden');
 }
@@ -2140,33 +2166,36 @@ function renderHistory(history) {
             : `<span class="payment-badge pending" data-action="toggle-payment" data-id="${safeId}" title="Cliquer pour marquer comme payée">Impayée</span>`;
 
         // Reminder buttons for R1, R2, R3, R4
+        // Désactivés si : déjà payée, pas d'email, ou email initial pas encore envoyé
         const r1Sent = inv.reminder_1_sent;
         const r2Sent = inv.reminder_2_sent;
         const r3Sent = inv.reminder_3_sent;
         const r4Sent = inv.reminder_4_sent;
+        const reminderDisabled = isPaid || !hasEmail || !inv.email_sent;
+        const reminderDisabledTitle = !inv.email_sent ? 'Email initial non envoyé' : 'Non disponible';
 
         const r1Btn = r1Sent
             ? '<button class="reminder-cell-btn sent" disabled title="Envoyée">R1</button>'
-            : (isPaid || !hasEmail)
-                ? '<button class="reminder-cell-btn r1" disabled title="Non disponible">R1</button>'
+            : reminderDisabled
+                ? `<button class="reminder-cell-btn r1" disabled title="${reminderDisabledTitle}">R1</button>`
                 : `<button class="reminder-cell-btn r1" data-action="send-reminder" data-id="${safeId}" data-type="1" title="Envoyer relance 1">R1</button>`;
 
         const r2Btn = r2Sent
             ? '<button class="reminder-cell-btn sent" disabled title="Envoyée">R2</button>'
-            : (isPaid || !hasEmail)
-                ? '<button class="reminder-cell-btn r2" disabled title="Non disponible">R2</button>'
+            : reminderDisabled
+                ? `<button class="reminder-cell-btn r2" disabled title="${reminderDisabledTitle}">R2</button>`
                 : `<button class="reminder-cell-btn r2" data-action="send-reminder" data-id="${safeId}" data-type="2" title="Envoyer relance 2">R2</button>`;
 
         const r3Btn = r3Sent
             ? '<button class="reminder-cell-btn sent" disabled title="Envoyée">R3</button>'
-            : (isPaid || !hasEmail)
-                ? '<button class="reminder-cell-btn r3" disabled title="Non disponible">R3</button>'
+            : reminderDisabled
+                ? `<button class="reminder-cell-btn r3" disabled title="${reminderDisabledTitle}">R3</button>`
                 : `<button class="reminder-cell-btn r3" data-action="send-reminder" data-id="${safeId}" data-type="3" title="Envoyer relance 3">R3</button>`;
 
         const r4Btn = r4Sent
             ? '<button class="reminder-cell-btn sent" disabled title="Envoyée">R4</button>'
-            : (isPaid || !hasEmail)
-                ? '<button class="reminder-cell-btn r4" disabled title="Non disponible">R4</button>'
+            : reminderDisabled
+                ? `<button class="reminder-cell-btn r4" disabled title="${reminderDisabledTitle}">R4</button>`
                 : `<button class="reminder-cell-btn r4" data-action="send-reminder" data-id="${safeId}" data-type="4" title="Coupure compte">R4</button>`;
 
         // Formater la date d'échéance

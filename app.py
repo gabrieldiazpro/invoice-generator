@@ -64,6 +64,31 @@ DEBUG = ENV == 'development'
 VERSION = '1.0.0'
 
 # =============================================================================
+# Validation des variables d'environnement requises
+# =============================================================================
+
+REQUIRED_ENV_VARS = {
+    'MONGO_URI': 'URI de connexion MongoDB (mongodb:// ou mongodb+srv://)',
+    'ADMIN_PASSWORD': 'Mot de passe du super admin',
+    'SECRET_KEY': 'Clé secrète Flask pour les sessions',
+}
+
+_missing_vars = [
+    f"  - {var}: {desc}"
+    for var, desc in REQUIRED_ENV_VARS.items()
+    if not os.environ.get(var, '').strip()
+]
+
+if _missing_vars:
+    print("\n" + "=" * 60)
+    print("ERREUR: Variables d'environnement manquantes !")
+    print("=" * 60)
+    print("\n".join(_missing_vars))
+    print("\nVérifiez votre fichier .env ou vos variables d'environnement.")
+    print("=" * 60 + "\n")
+    sys.exit(1)
+
+# =============================================================================
 # Logging Configuration
 # =============================================================================
 
@@ -93,15 +118,7 @@ def setup_logging(app):
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
-# Vérification SECRET_KEY en production
 secret_key = os.environ.get('SECRET_KEY')
-if not secret_key:
-    if DEBUG:
-        secret_key = 'dev-secret-key-for-development-only'
-    else:
-        # Générer une clé temporaire en production si non définie (non recommandé)
-        secret_key = secrets.token_hex(32)
-        print("ATTENTION: SECRET_KEY non défini en production! Sessions invalides après redémarrage.")
 
 # Configuration
 app.config.update(
@@ -166,11 +183,7 @@ def optional_limit(limit_string):
 # =============================================================================
 
 # Configuration MongoDB
-# En production, MONGO_URI devrait être défini comme variable d'environnement
 MONGO_URI_ENV = os.environ.get('MONGO_URI', '').strip()
-
-# URI standard (non-SRV) pour compatibilité Railway
-MONGO_URI_FALLBACK = 'mongodb://gabrieldiazpro_db_user:gabrieldiazpro_db_password@ac-jcx3ul9-shard-00-00.dabmazu.mongodb.net:27017,ac-jcx3ul9-shard-00-01.dabmazu.mongodb.net:27017,ac-jcx3ul9-shard-00-02.dabmazu.mongodb.net:27017/?authSource=admin&replicaSet=atlas-eawm13-shard-0&tls=true'
 
 def validate_mongo_uri(uri):
     """Vérifie si l'URI MongoDB semble valide"""
@@ -192,16 +205,13 @@ def validate_mongo_uri(uri):
         return False
     return True
 
-# Utiliser l'URI de l'environnement seulement si elle est valide
-if MONGO_URI_ENV and validate_mongo_uri(MONGO_URI_ENV):
-    MONGO_URI = MONGO_URI_ENV
-    logger.info("Utilisation de MONGO_URI depuis l'environnement")
-else:
-    MONGO_URI = MONGO_URI_FALLBACK
-    if MONGO_URI_ENV:
-        logger.warning(f"MONGO_URI invalide dans l'environnement, utilisation du fallback")
-    else:
-        logger.warning("MONGO_URI non défini - utilisation du fallback")
+# Valider le format de l'URI
+if not validate_mongo_uri(MONGO_URI_ENV):
+    print(f"ERREUR: MONGO_URI invalide. Doit commencer par mongodb:// ou mongodb+srv://")
+    sys.exit(1)
+
+MONGO_URI = MONGO_URI_ENV
+logger.info("Utilisation de MONGO_URI depuis l'environnement")
 
 logger.info(f"Tentative de connexion MongoDB...")
 logger.info(f"URI format: {'SRV' if '+srv' in MONGO_URI else 'standard'}")
@@ -976,7 +986,7 @@ def init_super_admin():
             # Utiliser pbkdf2 pour compatibilité
             users_collection.insert_one({
                 'email': 'gabriel@peoplespost.fr',
-                'password': generate_password_hash(os.environ.get('ADMIN_PASSWORD', 'admin123'), method='pbkdf2:sha256'),
+                'password': generate_password_hash(os.environ.get('ADMIN_PASSWORD'), method='pbkdf2:sha256'),
                 'name': 'Gabriel',
                 'role': 'super_admin',
                 'created_at': datetime.now()

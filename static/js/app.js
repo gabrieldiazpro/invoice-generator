@@ -653,8 +653,8 @@ function showEmailResults(results) {
             <div class="email-result-item">
                 <div class="email-result-icon ${iconClass}">${icon}</div>
                 <div class="email-result-info">
-                    <div class="email-result-invoice">${d.invoice_number}</div>
-                    <div class="email-result-message">${d.message}</div>
+                    <div class="email-result-invoice">${escapeHtml(d.invoice_number)}</div>
+                    <div class="email-result-message">${escapeHtml(d.message)}</div>
                 </div>
             </div>
         `;
@@ -1496,7 +1496,7 @@ async function handleClientsImport(file) {
                             <h4>Erreurs détectées :</h4>
                             <ul>
                                 ${results.errors.slice(0, 10).map(err => `
-                                    <li>Ligne ${err.row}: ${err.error}${err.nom ? ` (${err.nom})` : ''}</li>
+                                    <li>Ligne ${err.row}: ${escapeHtml(err.error)}${err.nom ? ` (${escapeHtml(err.nom)})` : ''}</li>
                                 `).join('')}
                                 ${results.errors.length > 10 ? `<li>... et ${results.errors.length - 10} autres erreurs</li>` : ''}
                             </ul>
@@ -2589,8 +2589,8 @@ function showReminderResults(results) {
             <div class="email-result-item">
                 <div class="email-result-icon ${iconClass}">${icon}</div>
                 <div class="email-result-info">
-                    <div class="email-result-invoice">${d.invoice_number}</div>
-                    <div class="email-result-message">${d.message}</div>
+                    <div class="email-result-invoice">${escapeHtml(d.invoice_number)}</div>
+                    <div class="email-result-message">${escapeHtml(d.message)}</div>
                 </div>
             </div>
         `;

@@ -1827,11 +1827,6 @@ def login():
         user_data = users_collection.find_one({'email': email})
         logger.info(f"User lookup for {email}: {'found' if user_data else 'not found'}")
 
-        if user_data:
-            logger.info(f"Hash method: {user_data['password'][:20]}")
-            pwd_ok = check_password_hash(user_data['password'], password)
-            logger.info(f"Password check: {pwd_ok}")
-
         if user_data and check_password_hash(user_data['password'], password):
             user = User(user_data)
             login_user(user, remember=True)
@@ -2500,9 +2495,8 @@ def view_invoice(batch_id, filename):
 @login_required
 def download_all_invoices(batch_id):
     """Télécharge toutes les factures en ZIP"""
-    batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
-
-    if not os.path.exists(batch_folder):
+    batch_folder = safe_filepath(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
+    if not batch_folder or not os.path.exists(batch_folder):
         return jsonify({'error': 'Batch non trouvé'}), 404
 
     # Créer le ZIP
@@ -2627,7 +2621,6 @@ L'équipe Peoples Post
         return jsonify({'success': True, 'message': f'Email de test envoyé à {test_email_addr}'})
     else:
         return jsonify({'success': False, 'error': result.get('error', 'Erreur inconnue')}), 400
-        return jsonify({'success': False, 'error': f'Erreur: {str(e)}'}), 500
 
 
 @app.route('/api/email/send/<batch_id>/<invoice_number>', methods=['POST'])
@@ -3067,9 +3060,13 @@ def upload_pdf_for_history(invoice_id):
 
     batch_id = invoice.get('batch_id')
     filename = invoice.get('filename')
-    batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
+    batch_folder = safe_filepath(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
+    if not batch_folder:
+        return jsonify({'error': 'Chemin de batch invalide'}), 400
     os.makedirs(batch_folder, exist_ok=True)
-    filepath = os.path.join(batch_folder, filename)
+    filepath = safe_filepath(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}", filename)
+    if not filepath:
+        return jsonify({'error': 'Chemin de fichier invalide'}), 400
     file.save(filepath)
 
     return jsonify({'success': True})
@@ -3472,11 +3469,12 @@ def bulk_download():
             if not batch_id or not filename:
                 continue
 
-            batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}")
-            filepath = os.path.join(batch_folder, filename)
+            filepath = safe_filepath(app.config['OUTPUT_FOLDER'], f"batch_{batch_id}", filename)
+            if not filepath:
+                continue
 
             if os.path.exists(filepath):
-                zip_file.write(filepath, filename)
+                zip_file.write(filepath, os.path.basename(filepath))
 
     zip_buffer.seek(0)
 
@@ -3537,7 +3535,7 @@ def bulk_send_reminder():
         return jsonify({'error': 'Type de relance invalide'}), 400
 
     # Récupérer la config email
-    email_config = get_email_config()
+    email_config = load_email_config()
 
     # Récupérer les infos de l'utilisateur
     user_data = users_collection.find_one({'_id': ObjectId(current_user.id)})
@@ -4165,11 +4163,10 @@ def download_clients_template():
 # ============================================================================
 
 def generate_temp_password(length=12):
-    """Génère un mot de passe temporaire aléatoire"""
-    import random
+    """Génère un mot de passe temporaire aléatoire (cryptographiquement sûr)"""
     import string
     chars = string.ascii_letters + string.digits
-    return ''.join(random.choice(chars) for _ in range(length))
+    return ''.join(secrets.choice(chars) for _ in range(length))
 
 
 def send_client_welcome_email(client_email, client_name, temp_password):

@@ -2235,7 +2235,7 @@ function renderHistory(history) {
         const emailBadge = emailSent
             ? `<span class="email-badge sent" title="Envoyé le ${emailSentAt}">✓</span>`
             : hasEmail
-                ? '<span class="email-badge not-sent" title="Non envoyé">✗</span>'
+                ? `<span class="email-badge not-sent clickable" data-action="send-initial-email" data-id="${safeId}" title="Cliquer pour envoyer l'email">✗</span>`
                 : '<span class="email-badge no-email" title="Pas d\'adresse email">–</span>';
 
         return `
@@ -2467,6 +2467,32 @@ async function togglePaymentStatus(id) {
         }
     } catch (error) {
         showToast('Erreur lors de la mise à jour', 'error');
+    }
+}
+
+async function sendInitialEmailFromHistory(id) {
+    const inv = historyData.find(h => h.id === id);
+    if (!inv) return;
+
+    if (!confirm(`Envoyer l'email de facturation pour ${inv.invoice_number} à ${inv.client_email} ?`)) {
+        return;
+    }
+
+    try {
+        const response = await safeFetch(`/api/history/${encodeURIComponent(id)}/send-email`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`Email envoyé avec succès pour ${inv.invoice_number}`, 'success');
+            reloadHistory();
+        } else {
+            showToast(data.error || 'Erreur lors de l\'envoi', 'error');
+        }
+    } catch (error) {
+        showToast('Erreur lors de l\'envoi de l\'email', 'error');
     }
 }
 
@@ -3621,6 +3647,7 @@ function setupHistoryDelegation() {
         else if (action === 'delete-history') deleteFromHistory(id);
         else if (action === 'toggle-payment') togglePaymentStatus(id);
         else if (action === 'send-reminder') sendSingleReminder(id, parseInt(btn.dataset.type));
+        else if (action === 'send-initial-email') sendInitialEmailFromHistory(id);
     });
     tbody.addEventListener('change', (e) => {
         if (e.target.classList.contains('history-checkbox')) updateBulkActionsBar();

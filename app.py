@@ -3309,6 +3309,61 @@ def update_payment_status(invoice_id):
     return jsonify({'error': 'Facture non trouvée'}), 404
 
 
+@app.route('/api/history/<invoice_id>/send-email', methods=['POST'])
+@login_required
+def send_email_from_history(invoice_id):
+    """Envoie l'email initial de facturation depuis l'historique"""
+    history = load_invoice_history()
+
+    invoice = next((h for h in history if h.get('id') == invoice_id), None)
+    if not invoice:
+        return jsonify({'error': 'Facture non trouvée'}), 404
+
+    if invoice.get('email_sent'):
+        return jsonify({'error': 'L\'email a déjà été envoyé'}), 400
+
+    if not invoice.get('client_email'):
+        return jsonify({'error': 'Pas d\'adresse email pour ce client'}), 400
+
+    email_config = load_email_config()
+
+    invoice_data = {
+        **invoice,
+        'company_name': invoice.get('client_name', invoice.get('shipper', ''))
+    }
+
+    batch_folder = os.path.join(app.config['OUTPUT_FOLDER'], f"batch_{invoice.get('batch_id')}")
+
+    result = send_invoice_email(invoice_data, email_config, batch_folder)
+
+    if result['success']:
+        now = datetime.now().isoformat()
+        update_invoice_in_history(invoice_id, {
+            'email_sent': True,
+            'email_sent_at': now
+        })
+
+        # Mettre à jour aussi le batch_data si disponible
+        batch_data_path = os.path.join(batch_folder, BATCH_DATA_FILE)
+        if os.path.exists(batch_data_path):
+            try:
+                with open(batch_data_path, 'r', encoding='utf-8') as f:
+                    batch_data = json.load(f)
+                for inv in batch_data.get('invoices', []):
+                    if inv.get('invoice_number') == invoice.get('invoice_number'):
+                        inv['email_sent'] = True
+                        inv['email_sent_at'] = now
+                        break
+                with open(batch_data_path, 'w', encoding='utf-8') as f:
+                    json.dump(batch_data, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+
+        return jsonify({'success': True})
+
+    return jsonify(result), 500
+
+
 @app.route('/api/history/<invoice_id>/reminder/<int:reminder_type>', methods=['POST'])
 @login_required
 def send_single_reminder(invoice_id, reminder_type):

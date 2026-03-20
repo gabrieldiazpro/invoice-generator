@@ -1734,6 +1734,15 @@ a:hover {
     color: var(--color-warning);
 }
 
+.email-badge.not-sent.clickable {
+    cursor: pointer;
+}
+
+.email-badge.not-sent.clickable:hover {
+    background-color: var(--color-warning);
+    color: white;
+}
+
 .email-badge.no-email {
     background-color: var(--color-gray-100, #f3f4f6);
     color: var(--color-gray-400, #9ca3af);

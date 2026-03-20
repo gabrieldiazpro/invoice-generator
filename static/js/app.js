@@ -2537,7 +2537,7 @@ async function sendAllReminders(reminderType) {
         return;
     }
 
-    const message = `Envoyer ${reminderNames[reminderType]} pour ${eligibleCount} facture(s) ?`;
+    const message = `⚠️ Vous êtes sur le point d'envoyer "${reminderNames[reminderType]}" pour ${eligibleCount} facture(s).\n\nCette action est irréversible. Confirmer l'envoi ?`;
 
     if (!confirm(message)) {
         return;
@@ -2717,6 +2717,21 @@ function updateBulkActionsBar() {
     if (selectAll) {
         selectAll.checked = allChecked;
         selectAll.indeterminate = selected.length > 0 && !allChecked;
+    }
+
+    // Enable/disable bulk R buttons based on eligibility
+    const selectedInvoices = historyData.filter(inv => selected.includes(inv.id));
+    for (let r = 1; r <= 4; r++) {
+        const btn = document.getElementById(`btn-bulk-r${r}`);
+        if (!btn) continue;
+        const reminderKey = `reminder_${r}_sent`;
+        const allEligible = selectedInvoices.length > 0 && selectedInvoices.every(inv =>
+            inv.payment_status !== 'paid' && inv.client_email && inv.email_sent && !inv[reminderKey]
+        );
+        btn.disabled = !allEligible;
+        btn.title = allEligible
+            ? `Envoyer R${r} aux ${selectedInvoices.length} facture(s)`
+            : 'Certaines factures sélectionnées ne sont pas éligibles';
     }
 }
 
@@ -2927,8 +2942,8 @@ async function bulkSendReminder(reminderType) {
     const ids = getSelectedInvoiceIds();
     if (ids.length === 0) return;
 
-    const reminderNames = { 1: 'Relance 1', 2: 'Relance 2', 3: 'Relance 3', 4: 'Relance 4 (Coupure)' };
-    if (!confirm(`Envoyer ${reminderNames[reminderType]} à ${ids.length} facture(s) sélectionnée(s) ?`)) return;
+    const reminderNames = { 1: 'Relance 1 (48h)', 2: 'Relance 2 (Avertissement)', 3: 'Relance 3 (Dernier avis)', 4: 'Relance 4 (Coupure compte)' };
+    if (!confirm(`⚠️ Vous êtes sur le point d'envoyer "${reminderNames[reminderType]}" à ${ids.length} facture(s) sélectionnée(s).\n\nCette action est irréversible. Confirmer l'envoi ?`)) return;
 
     try {
         showToast('Envoi des relances en cours...', 'info');

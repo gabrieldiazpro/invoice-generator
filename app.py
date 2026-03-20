@@ -621,15 +621,7 @@ def get_client_info(shipper_name, clients_config, csv_siret=None):
                     print(f"✓ Client SIRET match: '{shipper_name}' → '{client_name}' (SIRET: {clean_siret})")
                     return client_data
 
-            # Chercher dans MongoDB
-            all_db_clients = {doc['_id']: doc for doc in clients_collection.find()}
-            for db_name, db_client in all_db_clients.items():
-                db_siret = ''.join(c for c in str(db_client.get('siret', '')) if c.isdigit())
-                if db_siret and db_siret == clean_siret:
-                    db_client.pop('_id', None)
-                    clients_config[db_name] = db_client
-                    print(f"✓ Client DB SIRET match: '{shipper_name}' → '{db_name}' (SIRET: {clean_siret})")
-                    return db_client
+            # Note: pas de requête MongoDB supplémentaire, clients_config contient déjà tous les clients
 
     # 2. Essayer le matching intelligent par nom (dans le cache local)
     matched_name, client_info, score = find_best_client_match(shipper_name, clients_config)
@@ -639,55 +631,50 @@ def get_client_info(shipper_name, clients_config, csv_siret=None):
         # On ne sauvegarde PAS le nom alternatif dans la config
         return client_info
 
-    # Vérifier dans MongoDB avec matching intelligent
-    all_db_clients = {doc['_id']: doc for doc in clients_collection.find()}
+    # Matching intelligent sur clients_config (déjà chargé depuis MongoDB)
     shipper_lower = shipper_name.lower().strip()
     shipper_normalized = normalize_client_name(shipper_name)
-
-    # Préparer les versions sans espaces pour comparaison
     shipper_nospace = shipper_normalized.replace(' ', '')
 
-    for db_name, db_client in all_db_clients.items():
-        client_nom = db_client.get('nom', '')
-        db_normalized = normalize_client_name(db_name)
+    best_fuzzy_match = None
+    best_fuzzy_score = 0
+
+    for cfg_name, cfg_data in clients_config.items():
+        client_nom = cfg_data.get('nom', '')
+        cfg_normalized = normalize_client_name(cfg_name)
         nom_normalized = normalize_client_name(client_nom)
-        db_nospace = db_normalized.replace(' ', '')
+        cfg_nospace = cfg_normalized.replace(' ', '')
         nom_nospace = nom_normalized.replace(' ', '')
 
         # Match exact sur la clé
-        if db_name == shipper_name:
-            db_client.pop('_id', None)
-            clients_config[db_name] = db_client
-            return db_client
+        if cfg_name == shipper_name:
+            return cfg_data
 
         # Match insensible à la casse sur clé ou nom
-        if db_name.lower().strip() == shipper_lower or client_nom.lower().strip() == shipper_lower:
-            db_client.pop('_id', None)
-            clients_config[db_name] = db_client
-            return db_client
+        if cfg_name.lower().strip() == shipper_lower or client_nom.lower().strip() == shipper_lower:
+            return cfg_data
 
         # Match normalisé (avec et sans espaces)
-        if db_normalized == shipper_normalized or nom_normalized == shipper_normalized:
-            db_client.pop('_id', None)
-            clients_config[db_name] = db_client
-            print(f"✓ Client DB normalized match: '{shipper_name}' → '{db_name}'")
-            return db_client
+        if cfg_normalized == shipper_normalized or nom_normalized == shipper_normalized:
+            print(f"✓ Client normalized match: '{shipper_name}' → '{cfg_name}'")
+            return cfg_data
 
-        # Match normalisé sans espaces (essentielsisabelle = essentiels isabelle)
-        if db_nospace == shipper_nospace or nom_nospace == shipper_nospace:
-            db_client.pop('_id', None)
-            clients_config[db_name] = db_client
-            print(f"✓ Client DB nospace match: '{shipper_name}' → '{db_name}'")
-            return db_client
+        # Match normalisé sans espaces
+        if cfg_nospace == shipper_nospace or nom_nospace == shipper_nospace:
+            print(f"✓ Client nospace match: '{shipper_name}' → '{cfg_name}'")
+            return cfg_data
 
-        # Match par similarité (sur clé et nom)
-        score_key = calculate_similarity(shipper_name, db_name)
+        # Match par similarité (garder le meilleur)
+        score_key = calculate_similarity(shipper_name, cfg_name)
         score_nom = calculate_similarity(shipper_name, client_nom) if client_nom else 0
-        if max(score_key, score_nom) >= 0.45:
-            db_client.pop('_id', None)
-            clients_config[db_name] = db_client
-            print(f"✓ Client DB fuzzy match: '{shipper_name}' → '{db_name}' (score: {max(score_key, score_nom):.2f})")
-            return db_client
+        best = max(score_key, score_nom)
+        if best >= 0.45 and best > best_fuzzy_score:
+            best_fuzzy_score = best
+            best_fuzzy_match = cfg_data
+
+    if best_fuzzy_match:
+        print(f"✓ Client fuzzy match: '{shipper_name}' (score: {best_fuzzy_score:.2f})")
+        return best_fuzzy_match
 
     # Aucun match trouvé - créer une nouvelle entrée
     default_client = {

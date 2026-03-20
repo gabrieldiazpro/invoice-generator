@@ -34,6 +34,27 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 FONTS_DIR = os.path.join(os.path.dirname(__file__), "static", "fonts")
 FONT_URL = f"file://{os.path.join(FONTS_DIR, 'Montserrat-Regular.ttf')}"
 
+# Singletons (évite de recréer à chaque instance)
+_jinja_env = None
+_font_data = None
+
+def _get_jinja_env():
+    """Retourne un Environment Jinja2 singleton (compilé une seule fois)"""
+    global _jinja_env
+    if _jinja_env is None:
+        _jinja_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
+    return _jinja_env
+
+def _get_font_data():
+    """Charge les fonts en mémoire une seule fois"""
+    global _font_data
+    if _font_data is None:
+        font_path = os.path.join(FONTS_DIR, 'Montserrat-Regular.ttf')
+        if os.path.exists(font_path):
+            with open(font_path, 'rb') as f:
+                _font_data = f.read()
+    return _font_data
+
 
 def load_clients_config():
     """Charge la configuration des clients depuis le fichier JSON."""
@@ -323,7 +344,9 @@ class InvoicePDFGenerator:
     def __init__(self, output_dir="output"):
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
-        self._jinja_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
+        self._jinja_env = _get_jinja_env()
+        # Pré-charger les fonts en mémoire
+        _get_font_data()
 
     def generate_invoice(self, shipper_name, rows, client_info, invoice_number, emission_date=None):
         """Génère une facture PDF via HTML → WeasyPrint."""

@@ -22,6 +22,7 @@ import traceback
 import re
 import secrets
 import urllib.request
+import time
 import urllib.error
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -138,6 +139,8 @@ app.config.update(
     JSON_AS_ASCII=False,
     JSON_SORT_KEYS=False,
     SEND_FILE_MAX_AGE_DEFAULT=31536000,  # Cache fichiers statiques 1 an
+    COMPRESS_MIMETYPES=['text/html', 'text/css', 'application/json', 'application/javascript'],
+    COMPRESS_MIN_SIZE=500,  # Compresser dès 500 octets
 )
 
 # Compression GZIP
@@ -147,6 +150,25 @@ try:
     print("Compression GZIP activée")
 except ImportError:
     print("flask-compress non installé - compression désactivée")
+
+# Cache CSV parsé en mémoire (évite de re-parser le même fichier 3 fois)
+_csv_cache = {}
+_CSV_CACHE_TTL = 600  # 10 minutes
+
+def get_parsed_csv(filepath):
+    """Retourne le CSV parsé depuis le cache ou le parse et le met en cache"""
+    now = time.time()
+    if filepath in _csv_cache:
+        data, ts = _csv_cache[filepath]
+        if now - ts < _CSV_CACHE_TTL:
+            return data
+    data = parse_csv(filepath)
+    _csv_cache[filepath] = (data, now)
+    # Nettoyage des entrées expirées
+    expired = [k for k, (_, ts) in _csv_cache.items() if now - ts >= _CSV_CACHE_TTL]
+    for k in expired:
+        del _csv_cache[k]
+    return data
 
 # Setup logging
 logger = setup_logging(app)
@@ -2210,7 +2232,7 @@ def upload_csv():
 
     try:
         # Parser le CSV
-        data_by_shipper = parse_csv(filepath)
+        data_by_shipper = get_parsed_csv(filepath)
 
         if not data_by_shipper:
             os.remove(filepath)
@@ -2277,7 +2299,7 @@ def refresh_preview(file_id):
 
     try:
         # Parser le CSV
-        data_by_shipper = parse_csv(filepath)
+        data_by_shipper = get_parsed_csv(filepath)
 
         if not data_by_shipper:
             return jsonify({'error': 'Aucune donnée trouvée dans le fichier CSV'}), 400
@@ -2346,7 +2368,7 @@ def generate_invoices():
 
     # Pré-charger les données avant le streaming (accès à request impossible dans le générateur)
     try:
-        data_by_shipper = parse_csv(filepath)
+        data_by_shipper = get_parsed_csv(filepath)
         clients_config = load_clients_config()
 
         details_by_siret = {}

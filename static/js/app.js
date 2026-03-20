@@ -39,6 +39,20 @@ function guardOp(key) {
 }
 function releaseOp(key) { pendingOps.delete(key); }
 
+// Tab data cache (avoid re-fetching when switching tabs)
+const tabCache = {
+    _ts: {},
+    _TTL: 30000, // 30 secondes
+    isValid(key) { return this._ts[key] && (Date.now() - this._ts[key] < this._TTL); },
+    touch(key) { this._ts[key] = Date.now(); },
+    invalidate(key) { delete this._ts[key]; },
+    invalidateAll() { this._ts = {}; }
+};
+
+function reloadClients() { tabCache.invalidate('clients'); loadClients(); }
+function reloadHistory(search, page) { tabCache.invalidate('history'); loadHistory(search, page); }
+function reloadUsers() { tabCache.invalidate('users'); loadUsers(); }
+
 // DOM Elements
 const uploadZone = document.getElementById('upload-zone');
 const fileInput = document.getElementById('file-input');
@@ -76,17 +90,17 @@ document.querySelectorAll('.nav-link').forEach(link => {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
         document.getElementById(`tab-${tabId}`).classList.add('active');
 
-        // Load data for tab
+        // Load data for tab (skip if cached)
         if (tabId === 'clients') {
-            loadClients();
+            if (!tabCache.isValid('clients')) loadClients();
         } else if (tabId === 'settings') {
-            loadEmailConfig();
+            if (!tabCache.isValid('settings')) loadEmailConfig();
         } else if (tabId === 'history') {
-            loadHistory();
+            if (!tabCache.isValid('history')) loadHistory();
         } else if (tabId === 'users') {
-            loadUsers();
+            if (!tabCache.isValid('users')) loadUsers();
         } else if (tabId === 'debug') {
-            loadDebugFiles();
+            loadDebugFiles(); // Toujours rafraîchir debug
         } else if (tabId === 'generator') {
             // Réinitialiser le générateur pour afficher le formulaire d'upload
             stepPreview.classList.add('hidden');
@@ -913,6 +927,7 @@ async function loadEmailConfig() {
         // Setup form tracking for email templates
         setupFormTracking('email-templates', emailTemplateFieldIds, 'btn-save-email-config', 'emailTemplates');
 
+        tabCache.touch('settings');
     } catch (error) {
         showToast('Erreur lors du chargement de la configuration', 'error');
     }
@@ -1080,6 +1095,7 @@ async function loadClients() {
         duplicateClientKeys = new Set(dupsData.keys || []);
 
         applyClientsFilter();
+        tabCache.touch('clients');
     } catch (error) {
         showToast('Erreur lors du chargement des clients', 'error');
     }
@@ -1290,7 +1306,7 @@ window.deleteClient = async function(key) {
         });
 
         showToast('Client supprimé', 'success');
-        loadClients();
+        reloadClients();
     } catch (error) {
         showToast('Erreur lors de la suppression', 'error');
     }
@@ -1491,7 +1507,7 @@ async function handleClientsImport(file) {
                 }
 
                 showToast(data.message, 'success');
-                loadClients(); // Refresh clients list
+                reloadClients();
             } else {
                 document.getElementById('import-results-summary').innerHTML = `
                     <div class="import-error-message">
@@ -1655,7 +1671,7 @@ async function confirmImportWithDecisions() {
                 `;
                 document.getElementById('import-results-details').innerHTML = '';
                 showToast(data.message, 'success');
-                loadClients();
+                reloadClients();
             } else {
                 document.getElementById('import-results-summary').innerHTML = `
                     <div class="import-error-message">
@@ -1822,7 +1838,7 @@ async function createClientAccount() {
             showToast('Compte client créé avec succès', 'success');
 
             // Refresh the client list to update the account status
-            loadClients();
+            reloadClients();
         } else {
             showToast(data.error || 'Erreur lors de la création du compte', 'error');
             btn.disabled = false;
@@ -1942,7 +1958,7 @@ document.getElementById('btn-save-client').addEventListener('click', async () =>
             await refreshPreviewData();
         }
 
-        loadClients();
+        reloadClients();
     } catch (error) {
         showToast(error.message, 'error');
     }
@@ -2055,7 +2071,7 @@ document.getElementById('btn-clients-bulk-delete')?.addEventListener('click', as
 
         if (data.success) {
             showToast(data.message, 'success');
-            loadClients();
+            reloadClients();
         } else {
             showToast(data.error || 'Erreur', 'error');
         }
@@ -2089,6 +2105,7 @@ async function loadHistory(search = '', page = 1) {
             historyTotal = data.total;
             applyHistoryFilter();
             renderHistoryPagination();
+            tabCache.touch('history');
         }
     } catch (error) {
         showToast('Erreur lors du chargement de l\'historique', 'error');
@@ -2444,7 +2461,7 @@ async function togglePaymentStatus(id) {
 
         if (response.ok) {
             showToast(`Facture marquée comme ${statusText}`, 'success');
-            loadHistory();
+            reloadHistory();
         } else {
             showToast('Erreur lors de la mise à jour', 'error');
         }
@@ -2476,7 +2493,7 @@ async function sendSingleReminder(id, reminderType) {
 
         if (data.success) {
             showToast(`${reminderNames[reminderType]} envoyée avec succès`, 'success');
-            loadHistory();
+            reloadHistory();
         } else {
             showToast(data.error || 'Erreur lors de l\'envoi', 'error');
         }
@@ -2532,7 +2549,7 @@ async function sendAllReminders(reminderType) {
 
         if (data.success) {
             showReminderResults(data.results);
-            loadHistory();
+            reloadHistory();
         } else {
             showToast(data.error || 'Erreur lors de l\'envoi', 'error');
         }
@@ -2600,7 +2617,7 @@ async function deleteFromHistory(id) {
 
         if (response.ok) {
             showToast('Facture supprimée de l\'historique', 'success');
-            loadHistory();
+            reloadHistory();
         } else {
             showToast('Erreur lors de la suppression', 'error');
         }
@@ -2834,7 +2851,7 @@ document.getElementById('btn-bulk-paid')?.addEventListener('click', async () => 
 
         if (data.success) {
             showToast(data.message, 'success');
-            loadHistory();
+            reloadHistory();
         } else {
             showToast(data.error || 'Erreur', 'error');
         }
@@ -2860,7 +2877,7 @@ document.getElementById('btn-bulk-unpaid')?.addEventListener('click', async () =
 
         if (data.success) {
             showToast(data.message, 'success');
-            loadHistory();
+            reloadHistory();
         } else {
             showToast(data.error || 'Erreur', 'error');
         }
@@ -2886,7 +2903,7 @@ document.getElementById('btn-bulk-delete')?.addEventListener('click', async () =
 
         if (data.success) {
             showToast(data.message, 'success');
-            loadHistory();
+            reloadHistory();
         } else {
             showToast(data.error || 'Erreur', 'error');
         }
@@ -2915,7 +2932,7 @@ async function bulkSendReminder(reminderType) {
 
         if (data.success) {
             showToast(data.message, 'success');
-            loadHistory();
+            reloadHistory();
         } else {
             showToast(data.error || 'Erreur', 'error');
         }
@@ -3058,6 +3075,7 @@ async function loadUsers() {
         if (data.success) {
             usersData = data.users;
             renderUsers();
+            tabCache.touch('users');
         }
     } catch (error) {
         console.error('Error loading users:', error);
@@ -3226,7 +3244,7 @@ async function saveUser() {
 
             showToast(message, 'success');
             closeUserModal();
-            loadUsers();
+            reloadUsers();
         } else {
             showToast(data.error || 'Erreur', 'error');
         }
@@ -3253,7 +3271,7 @@ async function deleteUser(userId) {
 
         if (data.success) {
             showToast('Utilisateur supprimé', 'success');
-            loadUsers();
+            reloadUsers();
         } else {
             showToast(data.error || 'Erreur', 'error');
         }

@@ -1674,6 +1674,7 @@ def send_invoice_email(invoice_data, email_config, batch_folder, include_detail=
         payload = {
             "sender": {"name": actual_sender_name, "email": actual_sender_email},
             "to": [{"email": recipient_email, "name": invoice_data.get('company_name', recipient_email)}],
+            "cc": [{"email": "accounts@peoplespost.fr", "name": "Peoples Post Accounts" + (" debug" if DEBUG else "")}],
             "subject": subject,
             "htmlContent": body_html,
             "textContent": body_text
@@ -1791,6 +1792,7 @@ def send_reminder_email(invoice_data, email_config, batch_folder, reminder_type=
         payload = {
             "sender": {"name": actual_sender_name, "email": actual_sender_email},
             "to": [{"email": recipient_email, "name": invoice_data.get('company_name', recipient_email)}],
+            "cc": [{"email": "accounts@peoplespost.fr", "name": "Peoples Post Accounts" + (" debug" if DEBUG else "")}],
             "subject": subject,
             "htmlContent": body_html,
             "textContent": body_text

@@ -17,15 +17,15 @@ import argparse
 
 # Configuration de l'émetteur (Peoples Post)
 EMETTEUR = {
-    "nom": "PEOPLES POST",
-    "adresse": "22 rue Emeriau",
-    "code_postal": "75015",
-    "ville": "Paris",
-    "pays": "FR",
-    "email": "victor.estines@peoplespost.fr",
-    "siret": "98004432500010",
-    "bic": "QNTOFRP1XXX",
-    "iban": "FR7616958000018908124561391"
+    "nom": os.environ.get("EMETTEUR_NOM", "PEOPLES POST"),
+    "adresse": os.environ.get("EMETTEUR_ADRESSE", "22 rue Emeriau"),
+    "code_postal": os.environ.get("EMETTEUR_CP", "75015"),
+    "ville": os.environ.get("EMETTEUR_VILLE", "Paris"),
+    "pays": os.environ.get("EMETTEUR_PAYS", "FR"),
+    "email": os.environ.get("EMETTEUR_EMAIL", "victor.estines@peoplespost.fr"),
+    "siret": os.environ.get("EMETTEUR_SIRET", "98004432500010"),
+    "bic": os.environ.get("EMETTEUR_BIC", "QNTOFRP1XXX"),
+    "iban": os.environ.get("EMETTEUR_IBAN", "FR7616958000018908124561391"),
 }
 
 # Chemins
@@ -417,6 +417,7 @@ class InvoicePDFGenerator:
             'notes': None,
             'font_url': FONT_URL,
             'font_bold_url': FONT_URL,
+            'emetteur': EMETTEUR,
         }
 
         # Rendu HTML → PDF

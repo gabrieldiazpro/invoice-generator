@@ -283,12 +283,12 @@
         <!-- Émetteur + Client -->
         <div class="company-section">
             <div>
-                <div class="company-name">PEOPLES POST</div>
+                <div class="company-name">{{ emetteur.nom }}</div>
                 <div class="company-details">
-                    <p>22 rue Emeriau</p>
-                    <p>75015, Paris, FR</p>
-                    <p>victor.estines@peoplespost.fr</p>
-                    <p>SIRET 98004432500010</p>
+                    <p>{{ emetteur.adresse }}</p>
+                    <p>{{ emetteur.code_postal }}, {{ emetteur.ville }}, {{ emetteur.pays }}</p>
+                    <p>{{ emetteur.email }}</p>
+                    <p>SIRET {{ emetteur.siret }}</p>
                 </div>
             </div>
             <div>
@@ -344,15 +344,15 @@
                 <h4>Détails du paiements</h4>
                 <div class="payment-row">
                     <span class="label">Nom du bénéficiaire</span>
-                    <span>PEOPLES POST</span>
+                    <span>{{ emetteur.nom }}</span>
                 </div>
                 <div class="payment-row">
                     <span class="label">BIC</span>
-                    <span>QNTOFRP1XXX</span>
+                    <span>{{ emetteur.bic }}</span>
                 </div>
                 <div class="payment-row">
                     <span class="label">IBAN</span>
-                    <span>FR7616958000018908124561391</span>
+                    <span>{{ emetteur.iban }}</span>
                 </div>
             </div>
 

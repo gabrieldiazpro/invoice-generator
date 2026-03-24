@@ -289,7 +289,7 @@ def format_price(value):
             value = value.replace(',', '.').strip()
         d = Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         return d
-    except:
+    except (ValueError, TypeError, ArithmeticError):
         return Decimal('0.00')
 
 

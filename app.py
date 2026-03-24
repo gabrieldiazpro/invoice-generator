@@ -228,7 +228,7 @@ def validate_mongo_uri(uri):
         host_part = after_protocol.split('@')[1].split('/')[0] if '@' in after_protocol else after_protocol.split('/')[0]
         if not host_part or host_part.startswith('.') or host_part.endswith('.'):
             return False
-    except:
+    except (IndexError, ValueError):
         return False
     return True
 
@@ -4320,7 +4320,7 @@ def parse_import_file(filepath, ext):
                     df = pd.read_csv(filepath, sep=sep, encoding=encoding)
                     if len(df.columns) > 1:
                         break
-                except:
+                except (UnicodeDecodeError, pd.errors.ParserError, ValueError):
                     continue
             if df is not None and len(df.columns) > 1:
                 break
@@ -4344,7 +4344,7 @@ def parse_import_file(filepath, ext):
                 # Si on a trouvé une ligne avec très peu d'unnamed, on s'arrête
                 if unnamed <= 2:
                     break
-            except:
+            except (ValueError, KeyError, pd.errors.ParserError):
                 continue
 
         df = best_df
@@ -4425,7 +4425,7 @@ def import_clients():
     decisions_json = request.form.get('decisions', '{}')
     try:
         decisions = json.loads(decisions_json)  # {nom: 'add'|'update'|'skip'}
-    except:
+    except (json.JSONDecodeError, ValueError):
         decisions = {}
 
     # Sauvegarder temporairement le fichier

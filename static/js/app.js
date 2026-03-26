@@ -287,7 +287,7 @@ function showPreview(data) {
                     <div class="shipper-name">${escapeHtml(shipper.name)}</div>
                     <div class="shipper-details">${shipper.lines_count} lignes${shipper.client_email && shipper.client_email !== 'email@example.com' ? ' • ' + escapeHtml(shipper.client_email) : ''}${shipper.period ? ' • ' + escapeHtml(shipper.period) : ''}</div>
                 </div>
-                <div class="shipper-status ${statusClass}" ${!isConfigured && !isDuplicate ? `data-action="configure-client" data-shipper-key="${safeShipperName}"` : ''}>
+                <div class="shipper-status ${statusClass}" ${!isConfigured && !isDuplicate ? `data-action="configure-client" data-shipper-key="${safeShipperName}" data-csv-siret="${escapeHtml(shipper.csv_siret || '')}"` : ''}>
                     ${statusText}
                 </div>
                 <div class="shipper-total">${formatCurrency(shipper.total_ht)} HT</div>
@@ -1341,7 +1341,7 @@ window.editClient = async function(key) {
 };
 
 // Open client config from preview step (À configurer button)
-window.openClientConfigFromPreview = async function(encodedKey) {
+window.openClientConfigFromPreview = async function(encodedKey, csvData = {}) {
     const key = decodeURIComponent(encodedKey);
 
     try {
@@ -1351,12 +1351,12 @@ window.openClientConfigFromPreview = async function(encodedKey) {
 
         document.getElementById('client-key').value = key;
         document.getElementById('client-nom').value = client.nom || key;
-        document.getElementById('client-adresse').value = client.adresse && client.adresse !== 'Adresse à compléter' ? client.adresse : '';
-        document.getElementById('client-cp').value = client.code_postal && client.code_postal !== '00000' ? client.code_postal : '';
-        document.getElementById('client-ville').value = client.ville && client.ville !== 'Ville' ? client.ville : '';
+        document.getElementById('client-adresse').value = client.adresse && client.adresse !== 'Adresse à compléter' ? client.adresse : (window.devEmail ? '1 Rue de la Paix' : '');
+        document.getElementById('client-cp').value = client.code_postal && client.code_postal !== '00000' ? client.code_postal : (window.devEmail ? '75001' : '');
+        document.getElementById('client-ville').value = client.ville && client.ville !== 'Ville' ? client.ville : (window.devEmail ? 'Paris' : '');
         document.getElementById('client-pays').value = client.pays || 'France';
-        document.getElementById('client-email').value = client.email && client.email !== 'email@example.com' ? client.email : '';
-        document.getElementById('client-siret').value = client.siret && client.siret !== '00000000000000' ? client.siret : '';
+        document.getElementById('client-email').value = client.email && client.email !== 'email@example.com' ? client.email : (window.devEmail || '');
+        document.getElementById('client-siret').value = client.siret && client.siret !== '00000000000000' ? client.siret : (csvData.csvSiret || '');
 
         document.getElementById('modal-title').textContent = `Configurer: ${key}`;
 
@@ -3816,7 +3816,7 @@ function setupShippersDelegation() {
     if (!el) return;
     el.addEventListener('click', (e) => {
         const btn = e.target.closest('[data-action="configure-client"]');
-        if (btn) openClientConfigFromPreview(btn.dataset.shipperKey);
+        if (btn) openClientConfigFromPreview(btn.dataset.shipperKey, { csvSiret: btn.dataset.csvSiret || '' });
     });
 }
 setupShippersDelegation();

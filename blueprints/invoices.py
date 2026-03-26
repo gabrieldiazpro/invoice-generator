@@ -37,7 +37,8 @@ invoices_bp = Blueprint('invoices', __name__)
 def index():
     """Page d'accueil"""
     header_color = 'red' if DEBUG else 'white'
-    return render_template('index.html', user=current_user, now=datetime.now(), header_color=header_color)
+    dev_email = os.environ.get('DEV_RECIPIENT_EMAIL', '') if DEBUG else ''
+    return render_template('index.html', user=current_user, now=datetime.now(), header_color=header_color, dev_email=dev_email)
 
 
 # =============================================================================
@@ -85,7 +86,8 @@ def _build_shippers_summary(data_by_shipper, clients_config):
             'client_email': email if email != 'email@example.com' else '',
             'period': period,
             'already_invoiced': already_invoiced,
-            'existing_invoice': existing_invoice
+            'existing_invoice': existing_invoice,
+            'csv_siret': csv_siret
         })
 
     return shippers_summary

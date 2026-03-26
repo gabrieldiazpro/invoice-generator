@@ -1110,6 +1110,7 @@ Veuillez trouver ci-joint votre facture..."></textarea>
             isImpersonating: {{ 'true' if user.is_impersonating() else 'false' }},
             impersonatedBy: '{{ user.impersonated_by or "" }}'
         };
+        window.devEmail = '{{ dev_email or "" }}';
     </script>
     <script defer src="/static/js/app.js"></script>
 </body>

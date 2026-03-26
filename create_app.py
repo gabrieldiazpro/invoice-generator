@@ -34,7 +34,7 @@ def create_app():
             sys.stderr.write("ATTENTION: SECRET_KEY non défini en production! Sessions invalides après redémarrage.\n")
 
     app.config.update(
-        MAX_CONTENT_LENGTH=16 * 1024 * 1024,
+        MAX_CONTENT_LENGTH=int(os.environ.get('MAX_UPLOAD_MB', '64')) * 1024 * 1024,
         UPLOAD_FOLDER=os.path.join(os.path.dirname(__file__), 'uploads'),
         OUTPUT_FOLDER=os.path.join(os.path.dirname(__file__), 'output'),
         SECRET_KEY=secret_key,
@@ -180,7 +180,8 @@ def create_app():
     @app.errorhandler(413)
     def request_entity_too_large(error):
         logger.warning(f"File too large: {request.path}")
-        return jsonify({'error': 'Fichier trop volumineux (max 16MB)', 'code': 413}), 413
+        max_mb = int(os.environ.get('MAX_UPLOAD_MB', '64'))
+        return jsonify({'error': f'Fichier trop volumineux (max {max_mb}MB)', 'code': 413}), 413
 
     @app.errorhandler(429)
     def rate_limit_exceeded(error):

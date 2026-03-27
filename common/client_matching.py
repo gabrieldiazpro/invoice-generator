@@ -1,5 +1,5 @@
 """
-Matching intelligent des clients : normalisation, similarité, recherche fuzzy.
+Matching des clients : SIRET exact, nom exact, nom normalisé.
 """
 
 import os
